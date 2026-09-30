@@ -356,8 +356,15 @@
             }
         });
 
+        // Safe Icon Initialization (prevents crashing if CDN is blocked)
         function initIcons() {
-            lucide.createIcons();
+            try {
+                if (typeof lucide !== 'undefined' && lucide.createIcons) {
+                    lucide.createIcons();
+                }
+            } catch (e) {
+                console.warn('Icons failed to render:', e);
+            }
         }
 
         function toggleMobileSidebar() {
@@ -454,6 +461,7 @@
 
         function renderAccountsList() {
             const container = document.getElementById('accounts-container');
+            if (!container) return;
             if (accounts.length === 0) {
                 container.innerHTML = '<p class="text-xs text-zinc-500 italic">No accounts added yet.</p>';
                 return;
@@ -483,8 +491,10 @@
                     ${escapeHtml(acc.label)} (@${escapeHtml(acc.username)})
                 </option>
             `).join('');
-            document.getElementById('account-select').innerHTML = html;
-            document.getElementById('mobile-account-select').innerHTML = html;
+            const sel1 = document.getElementById('account-select');
+            const sel2 = document.getElementById('mobile-account-select');
+            if (sel1) sel1.innerHTML = html;
+            if (sel2) sel2.innerHTML = html;
         }
 
         // --- GITHUB API HELPER ---
@@ -520,6 +530,7 @@
 
         function renderRepoList(repos) {
             const listEl = document.getElementById('repo-list');
+            if (!listEl) return;
             if (repos.length === 0) {
                 listEl.innerHTML = '<div class="p-3 text-xs text-zinc-500">No repositories found.</div>';
                 return;
