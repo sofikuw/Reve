@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>reve // github cloud storage</title>
+    <title>reve</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -81,14 +81,6 @@
             </div>
 
             <div id="auth-error" class="hidden text-xs text-red-400 bg-red-950/30 border border-red-900/50 rounded-xl p-3"></div>
-
-            <!-- Footer Legal Links in Auth view -->
-            <div class="pt-4 border-t border-dark-800 flex flex-wrap items-center justify-center gap-4 text-[11px] text-zinc-500">
-                <button onclick="openLegalModal('privacy')" class="hover:text-zinc-300">Privacy Policy</button>
-                <button onclick="openLegalModal('terms')" class="hover:text-zinc-300">Terms & Conditions</button>
-                <button onclick="openLegalModal('cookies')" class="hover:text-zinc-300">Cookie Policy</button>
-                <button onclick="openLegalModal('license')" class="hover:text-zinc-300">License</button>
-            </div>
         </div>
     </div>
 
@@ -203,10 +195,10 @@
                     </table>
                 </div>
 
-                <!-- Status Bar & Legal Footer Links -->
+                <!-- Status Bar -->
                 <div class="h-9 border-t border-dark-800 bg-dark-900 px-4 flex items-center justify-between text-[11px] text-zinc-500 shrink-0">
                     <div id="status-text" class="truncate">Ready</div>
-                    <div class="hidden md:flex items-center gap-3">
+                    <div class="flex items-center gap-3">
                         <button onclick="openLegalModal('privacy')" class="hover:text-zinc-300">Privacy</button>
                         <span>•</span>
                         <button onclick="openLegalModal('terms')" class="hover:text-zinc-300">Terms</button>
@@ -356,7 +348,6 @@
             }
         });
 
-        // Safe Icon Initialization (prevents crashing if CDN is blocked)
         function initIcons() {
             try {
                 if (typeof lucide !== 'undefined' && lucide.createIcons) {
@@ -497,7 +488,7 @@
             if (sel2) sel2.innerHTML = html;
         }
 
-        // --- GITHUB API HELPER ---
+        // --- GITHUB API HELPER (With Required User-Agent) ---
         async function githubFetch(token, endpoint, options = {}) {
             const res = await fetch(`https://api.github.com${endpoint}`, {
                 ...options,
@@ -505,6 +496,7 @@
                     'Authorization': `Bearer ${token}`,
                     'Accept': 'application/vnd.github+json',
                     'X-GitHub-Api-Version': '2022-11-28',
+                    'User-Agent': 'reve-cloud-storage-app',
                     ...options.headers
                 }
             });
