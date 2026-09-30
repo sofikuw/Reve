@@ -149,7 +149,7 @@
                 <div id="repo-list" class="flex-1 overflow-y-auto p-2 space-y-1">
                     <!-- Dynamically populated repo list -->
                 </div>
-                <!-- Sidebar Mobile Account Selector & Footer Links -->
+                <!-- Sidebar Mobile Account Selector -->
                 <div class="p-3 border-t border-dark-800 space-y-3 bg-dark-950/40 md:hidden">
                     <select id="mobile-account-select" onchange="switchAccount(this.value); toggleMobileSidebar();" class="w-full bg-dark-950 border border-dark-700 text-xs rounded-lg px-2.5 py-2 text-zinc-200">
                     </select>
@@ -441,7 +441,7 @@
         }
 
         function resetFileView() {
-            document.getElementById('file-table-body.innerHTML') = '';
+            document.getElementById('file-table-body').innerHTML = '';
             document.getElementById('action-toolbar').classList.add('hidden');
             document.getElementById('breadcrumb').innerHTML = '<span class="text-zinc-600">Select a repository</span>';
         }
@@ -581,7 +581,7 @@
                         name: name,
                         description: description,
                         private: isPrivate,
-                        auto_init: true // Initializes with README so contents API works immediately
+                        auto_init: true
                     })
                 });
                 closeNewRepoModal();
@@ -820,8 +820,7 @@
                     const fileData = await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${currentPath}${name}`);
                     const text = atob(fileData.content.replace(/\s/g, ''));
                     if (ext === 'md') {
-                        // Clean basic rendering for markdown
-                        contentEl.innerHTML = `<div class="w-full h-full p-6 bg-dark-900 rounded-xl text-zinc-200 text-xs overflow-auto prose prose-invert"><pre class="whitespace-pre-wrap font-sans">${escapeHtml(text)}</pre></div>`;
+                        contentEl.innerHTML = `<div class="w-full h-full p-6 bg-dark-900 rounded-xl text-zinc-200 text-xs overflow-auto"><pre class="whitespace-pre-wrap font-sans">${escapeHtml(text)}</pre></div>`;
                     } else {
                         contentEl.innerHTML = `<pre class="w-full h-full p-4 bg-dark-900 rounded-xl text-zinc-200 text-xs font-mono overflow-auto whitespace-pre-wrap"><code>${escapeHtml(text)}</code></pre>`;
                     }
@@ -926,7 +925,7 @@
             privacy: `
                 <h4 class="text-white font-semibold text-sm">Privacy Policy</h4>
                 <p><strong>reve</strong> operates entirely client-side as a static web application. We do not operate any backend databases, servers, or analytics trackers.</p>
-                <p>Your GitHub Personal Access Tokens (PAT) and account configurations are stored locally in your browser's encrypted/local storage (`localStorage`) and are sent solely to the official GitHub REST API endpoints.</p>
+                <p>Your GitHub Personal Access Tokens (PAT) and account configurations are stored locally in your browser's local storage (`localStorage`) and are sent solely to the official GitHub REST API endpoints.</p>
             `,
             terms: `
                 <h4 class="text-white font-semibold text-sm">Terms & Conditions</h4>
