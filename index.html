@@ -1,1 +1,974 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>reve // github cloud storage</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            950: '#050505',
+                            900: '#0a0a0a',
+                            800: '#141414',
+                            700: '#222222',
+                            600: '#333333',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #222222;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #333333;
+        }
+    </style>
+</head>
+<body class="bg-dark-950 text-zinc-100 font-sans antialiased min-h-screen flex flex-col selection:bg-zinc-800 selection:text-white">
 
+    <!-- LOGIN / ACCOUNT MANAGER VIEW -->
+    <div id="auth-view" class="fixed inset-0 z-50 flex items-center justify-center bg-dark-950 p-4 overflow-y-auto">
+        <div class="w-full max-w-md bg-dark-900 border border-dark-700 rounded-2xl p-6 shadow-2xl space-y-6 my-auto">
+            <div class="space-y-1">
+                <div class="flex items-center justify-between">
+                    <h1 class="text-2xl font-semibold tracking-tight text-white flex items-center gap-2">
+                        <i data-lucide="terminal" class="w-6 h-6"></i> reve
+                    </h1>
+                    <span class="text-xs px-2.5 py-1 rounded-full bg-dark-800 text-zinc-400 border border-dark-700">GitHub Storage</span>
+                </div>
+                <p class="text-sm text-zinc-400">Manage your repositories as high-speed cloud storage using Personal Access Tokens (PAT).</p>
+            </div>
+
+            <!-- Saved Accounts List -->
+            <div id="accounts-container" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <!-- Dynamically populated -->
+            </div>
+
+            <!-- Add New Account Form -->
+            <div class="space-y-3 pt-2 border-t border-dark-800">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Add GitHub Account</h3>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Account Label / Name</label>
+                    <input type="text" id="input-label" placeholder="e.g. Personal or Work" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500 transition">
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Personal Access Token (PAT)</label>
+                    <input type="password" id="input-token" placeholder="ghp_xxxxxxxxxxxx" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500 transition">
+                    <p class="text-[11px] text-zinc-500 mt-1">Requires `repo` scope permissions.</p>
+                </div>
+                <button onclick="addAccount()" class="w-full bg-zinc-100 hover:bg-white text-zinc-950 font-medium py-2.5 px-4 rounded-xl text-sm transition flex items-center justify-center gap-2">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Add Account & Connect
+                </button>
+            </div>
+
+            <div id="auth-error" class="hidden text-xs text-red-400 bg-red-950/30 border border-red-900/50 rounded-xl p-3"></div>
+
+            <!-- Footer Legal Links in Auth view -->
+            <div class="pt-4 border-t border-dark-800 flex flex-wrap items-center justify-center gap-4 text-[11px] text-zinc-500">
+                <button onclick="openLegalModal('privacy')" class="hover:text-zinc-300">Privacy Policy</button>
+                <button onclick="openLegalModal('terms')" class="hover:text-zinc-300">Terms & Conditions</button>
+                <button onclick="openLegalModal('cookies')" class="hover:text-zinc-300">Cookie Policy</button>
+                <button onclick="openLegalModal('license')" class="hover:text-zinc-300">License</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP INTERFACE (FILE MANAGER) -->
+    <div id="app-view" class="hidden flex-1 flex flex-col h-screen overflow-hidden">
+        
+        <!-- Top Navbar -->
+        <header class="h-14 border-b border-dark-800 bg-dark-900/80 backdrop-blur px-4 flex items-center justify-between shrink-0">
+            <div class="flex items-center gap-3">
+                <!-- Mobile Sidebar Toggle -->
+                <button onclick="toggleMobileSidebar()" class="md:hidden text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-dark-800 transition">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+                <div class="flex items-center gap-2 font-semibold tracking-tight text-white">
+                    <i data-lucide="terminal" class="w-5 h-5"></i> reve
+                </div>
+                <div class="hidden sm:block h-4 w-[1px] bg-dark-700"></div>
+                <!-- Account Selector -->
+                <div class="hidden sm:flex items-center gap-2">
+                    <span class="text-xs text-zinc-500">Account:</span>
+                    <select id="account-select" onchange="switchAccount(this.value)" class="bg-dark-950 border border-dark-700 text-xs rounded-lg px-2.5 py-1.5 text-zinc-200 focus:outline-none focus:border-zinc-500">
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button onclick="openNewRepoModal()" class="bg-dark-800 hover:bg-dark-700 text-zinc-200 px-3 py-1.5 rounded-xl text-xs font-medium border border-dark-700 transition flex items-center gap-1.5">
+                    <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> <span class="hidden sm:inline">New Repo</span>
+                </button>
+                <button onclick="openAuthModal()" class="bg-dark-800 hover:bg-dark-700 text-zinc-300 px-3 py-1.5 rounded-xl text-xs font-medium border border-dark-700 transition flex items-center gap-1.5">
+                    <i data-lucide="users" class="w-3.5 h-3.5"></i> <span class="hidden sm:inline">Accounts</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <div class="flex-1 flex overflow-hidden relative">
+            
+            <!-- Sidebar Backdrop for Mobile -->
+            <div id="sidebar-backdrop" onclick="toggleMobileSidebar()" class="hidden fixed inset-0 bg-black/60 z-20 md:hidden"></div>
+
+            <!-- Sidebar: Repositories -->
+            <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-30 w-72 md:w-64 border-r border-dark-800 bg-dark-900 md:bg-dark-900/50 flex flex-col shrink-0 transform -translate-x-full md:translate-x-0 transition-transform duration-200">
+                <div class="p-3 border-b border-dark-800 flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">Repositories</span>
+                    <div class="flex items-center gap-1">
+                        <button onclick="openNewRepoModal()" title="Create New Repo" class="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-dark-800 transition">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="loadRepositories()" title="Refresh Repositories" class="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-dark-800 transition">
+                            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="repo-search-box" class="p-2 border-b border-dark-800">
+                    <input type="text" id="repo-filter" oninput="filterRepos(this.value)" placeholder="Filter repos..." class="w-full bg-dark-950 border border-dark-700 rounded-lg px-2.5 py-1 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500">
+                </div>
+                <div id="repo-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+                    <!-- Dynamically populated repo list -->
+                </div>
+                <!-- Sidebar Mobile Account Selector & Footer Links -->
+                <div class="p-3 border-t border-dark-800 space-y-3 bg-dark-950/40 md:hidden">
+                    <select id="mobile-account-select" onchange="switchAccount(this.value); toggleMobileSidebar();" class="w-full bg-dark-950 border border-dark-700 text-xs rounded-lg px-2.5 py-2 text-zinc-200">
+                    </select>
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="flex-1 flex flex-col bg-dark-950 overflow-hidden">
+                
+                <!-- Toolbar / Breadcrumbs / Actions -->
+                <div class="p-3 sm:p-4 border-b border-dark-800 flex flex-wrap items-center justify-between gap-3 bg-dark-900/30">
+                    <!-- Breadcrumb -->
+                    <nav id="breadcrumb" class="flex items-center gap-1.5 text-xs text-zinc-400 overflow-x-auto py-1 max-w-full">
+                        <span class="text-zinc-600">Select a repository</span>
+                    </nav>
+
+                    <!-- Action Buttons -->
+                    <div id="action-toolbar" class="hidden flex items-center gap-2">
+                        <button onclick="triggerUpload()" class="bg-zinc-100 hover:bg-white text-zinc-950 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
+                            <i data-lucide="upload" class="w-3.5 h-3.5"></i> Upload
+                        </button>
+                        <input type="file" id="hidden-file-input" multiple onchange="handleFileUpload(event)" class="hidden">
+                        
+                        <button onclick="openNewFolderModal()" class="bg-dark-800 hover:bg-dark-700 text-zinc-200 px-3 py-1.5 rounded-xl text-xs font-medium border border-dark-700 transition flex items-center gap-1.5">
+                            <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i> <span class="hidden sm:inline">Folder</span>
+                        </button>
+                        <button onclick="loadCurrentPath()" class="bg-dark-800 hover:bg-dark-700 text-zinc-300 p-1.5 rounded-xl border border-dark-700 transition" title="Refresh">
+                            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- File List Table -->
+                <div class="flex-1 overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 bg-dark-900 border-b border-dark-800 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                            <tr>
+                                <th class="py-3 px-4">Name</th>
+                                <th class="py-3 px-4 w-24 sm:w-32">Size</th>
+                                <th class="py-3 px-4 hidden sm:table-cell w-48">Auto-Category / Path</th>
+                                <th class="py-3 px-4 text-right w-32 sm:w-40">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="file-table-body" class="divide-y divide-dark-800/50 text-xs">
+                            <tr>
+                                <td colspan="4" class="py-12 text-center text-zinc-500">
+                                    Choose a repository from the sidebar to start browsing.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Status Bar & Legal Footer Links -->
+                <div class="h-9 border-t border-dark-800 bg-dark-900 px-4 flex items-center justify-between text-[11px] text-zinc-500 shrink-0">
+                    <div id="status-text" class="truncate">Ready</div>
+                    <div class="hidden md:flex items-center gap-3">
+                        <button onclick="openLegalModal('privacy')" class="hover:text-zinc-300">Privacy</button>
+                        <span>•</span>
+                        <button onclick="openLegalModal('terms')" class="hover:text-zinc-300">Terms</button>
+                        <span>•</span>
+                        <button onclick="openLegalModal('cookies')" class="hover:text-zinc-300">Cookies</button>
+                        <span>•</span>
+                        <button onclick="openLegalModal('license')" class="hover:text-zinc-300">License</button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- PREVIEW MODAL -->
+    <div id="preview-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-6">
+        <div class="w-full max-w-5xl h-[85vh] bg-dark-900 border border-dark-700 rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+            <div class="px-4 py-3 border-b border-dark-800 flex items-center justify-between bg-dark-900">
+                <span id="preview-title" class="text-xs font-semibold text-zinc-200 truncate"></span>
+                <div class="flex items-center gap-2">
+                    <a id="preview-download-btn" href="#" target="_blank" download class="bg-dark-800 hover:bg-dark-700 text-zinc-300 px-3 py-1 rounded-lg text-xs font-medium border border-dark-700 transition flex items-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> Download
+                    </a>
+                    <button onclick="closePreviewModal()" class="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-dark-800 transition">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="preview-content" class="flex-1 overflow-auto p-4 bg-dark-950 flex items-center justify-center">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- COPY/MOVE MODAL -->
+    <div id="move-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="w-full max-w-md bg-dark-900 border border-dark-700 rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 id="move-modal-title" class="text-sm font-semibold text-white">Copy / Move File</h3>
+            <p id="move-modal-file" class="text-xs text-zinc-400 truncate"></p>
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Target Repository</label>
+                <select id="target-repo-select" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500">
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Target Path (e.g. folder/subfolder/)</label>
+                <input type="text" id="target-path-input" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500">
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button onclick="closeMoveModal()" class="px-4 py-2 rounded-xl text-xs font-medium bg-dark-800 hover:bg-dark-700 text-zinc-300 transition">Cancel</button>
+                <button onclick="executeMoveOrCopy()" class="px-4 py-2 rounded-xl text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 transition">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW FOLDER MODAL -->
+    <div id="folder-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="w-full max-w-sm bg-dark-900 border border-dark-700 rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 class="text-sm font-semibold text-white">Create New Folder</h3>
+            <p class="text-xs text-zinc-400">GitHub creates folders automatically when you place a file inside them. Provide a placeholder filename (e.g. `folderName/.gitkeep`).</p>
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Folder Path</label>
+                <input type="text" id="new-folder-path" placeholder="docs/notes" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500">
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button onclick="closeNewFolderModal()" class="px-4 py-2 rounded-xl text-xs font-medium bg-dark-800 hover:bg-dark-700 text-zinc-300 transition">Cancel</button>
+                <button onclick="createFolder()" class="px-4 py-2 rounded-xl text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 transition">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW REPOSITORY MODAL -->
+    <div id="repo-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="w-full max-w-md bg-dark-900 border border-dark-700 rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 class="text-sm font-semibold text-white flex items-center gap-2"><i data-lucide="folder-git-2" class="w-4 h-4"></i> Create New Repository</h3>
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Repository Name</label>
+                <input type="text" id="new-repo-name" placeholder="my-cloud-storage" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500">
+            </div>
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Description (Optional)</label>
+                <input type="text" id="new-repo-desc" placeholder="Storage bucket managed by reve" class="w-full bg-dark-950 border border-dark-700 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500">
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+                <input type="checkbox" id="new-repo-private" checked class="rounded bg-dark-950 border-dark-700 text-zinc-100 focus:ring-0">
+                <label for="new-repo-private" class="text-xs text-zinc-300 select-none">Private Repository</label>
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button onclick="closeNewRepoModal()" class="px-4 py-2 rounded-xl text-xs font-medium bg-dark-800 hover:bg-dark-700 text-zinc-300 transition">Cancel</button>
+                <button onclick="createRepository()" class="px-4 py-2 rounded-xl text-xs font-medium bg-zinc-100 hover:bg-white text-zinc-950 transition">Create Repository</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LEGAL / POLICY MODAL -->
+    <div id="legal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+        <div class="w-full max-w-2xl h-[75vh] bg-dark-900 border border-dark-700 rounded-2xl flex flex-col shadow-2xl overflow-hidden">
+            <div class="px-4 py-3 border-b border-dark-800 flex items-center justify-between bg-dark-900">
+                <span id="legal-title" class="text-xs font-semibold text-zinc-200 uppercase tracking-wider"></span>
+                <button onclick="closeLegalModal()" class="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-dark-800 transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div id="legal-body" class="flex-1 overflow-auto p-6 bg-dark-950 text-xs text-zinc-300 space-y-4 leading-relaxed font-sans">
+                <!-- Dynamically populated legal text -->
+            </div>
+        </div>
+    </div>
+
+    <!-- APPLICATION LOGIC -->
+    <script>
+        // State Management
+        let accounts = JSON.parse(localStorage.getItem('reve_accounts') || '[]');
+        let currentAccount = null;
+        let repositories = [];
+        let currentRepo = null;
+        let currentPath = '';
+        let currentContents = [];
+        let activeFileOp = null;
+
+        const EXTENSION_CATEGORIES = {
+            images: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'],
+            documents: ['pdf', 'doc', 'docx', 'txt', 'md', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'json', 'xml'],
+            media: ['mp4', 'mkv', 'avi', 'mov', 'mp3', 'wav', 'flac', 'ogg'],
+            archives: ['zip', 'rar', '7z', 'tar', 'gz'],
+            code: ['html', 'css', 'js', 'ts', 'py', 'java', 'cpp', 'c', 'php', 'rs', 'go']
+        };
+
+        function getAutoCategoryFolder(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            for (const [category, exts] of Object.entries(EXTENSION_CATEGORIES)) {
+                if (exts.includes(ext)) {
+                    return category + '/';
+                }
+            }
+            return 'others/';
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initIcons();
+            renderAccountsList();
+            if (accounts.length > 0) {
+                currentAccount = accounts[0];
+                showAppView();
+                loadRepositories();
+            } else {
+                showAuthView();
+            }
+        });
+
+        function initIcons() {
+            lucide.createIcons();
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+
+        // --- AUTH & ACCOUNTS ---
+        function showAuthView() {
+            document.getElementById('auth-view').classList.remove('hidden');
+            document.getElementById('app-view').classList.add('hidden');
+            renderAccountsList();
+        }
+
+        function showAppView() {
+            document.getElementById('auth-view').classList.add('hidden');
+            document.getElementById('app-view').classList.remove('hidden');
+            renderAccountsDropdown();
+            initIcons();
+        }
+
+        function openAuthModal() {
+            showAuthView();
+        }
+
+        async function addAccount() {
+            const label = document.getElementById('input-label').value.trim();
+            const token = document.getElementById('input-token').value.trim();
+            const errEl = document.getElementById('auth-error');
+            errEl.classList.add('hidden');
+
+            if (!token) {
+                showError('Please enter a Personal Access Token.');
+                return;
+            }
+
+            try {
+                const user = await githubFetch(token, '/user');
+                const newAcc = {
+                    id: Date.now().toString(),
+                    label: label || user.login,
+                    username: user.login,
+                    token: token
+                };
+
+                accounts.push(newAcc);
+                localStorage.setItem('reve_accounts', JSON.stringify(accounts));
+                
+                document.getElementById('input-label').value = '';
+                document.getElementById('input-token').value = '';
+
+                currentAccount = newAcc;
+                showAppView();
+                loadRepositories();
+            } catch (err) {
+                showError('Authentication failed: ' + err.message);
+            }
+        }
+
+        function removeAccount(id) {
+            accounts = accounts.filter(a => a.id !== id);
+            localStorage.setItem('reve_accounts', JSON.stringify(accounts));
+            if (accounts.length === 0) {
+                showAuthView();
+            } else {
+                currentAccount = accounts[0];
+                renderAccountsList();
+                renderAccountsDropdown();
+                loadRepositories();
+            }
+        }
+
+        function switchAccount(id) {
+            currentAccount = accounts.find(a => a.id === id);
+            currentRepo = null;
+            currentPath = '';
+            loadRepositories();
+            resetFileView();
+        }
+
+        function resetFileView() {
+            document.getElementById('file-table-body.innerHTML') = '';
+            document.getElementById('action-toolbar').classList.add('hidden');
+            document.getElementById('breadcrumb').innerHTML = '<span class="text-zinc-600">Select a repository</span>';
+        }
+
+        function showError(msg) {
+            const errEl = document.getElementById('auth-error');
+            errEl.textContent = msg;
+            errEl.classList.remove('hidden');
+        }
+
+        function renderAccountsList() {
+            const container = document.getElementById('accounts-container');
+            if (accounts.length === 0) {
+                container.innerHTML = '<p class="text-xs text-zinc-500 italic">No accounts added yet.</p>';
+                return;
+            }
+            container.innerHTML = accounts.map(acc => `
+                <div class="flex items-center justify-between p-2.5 bg-dark-950 border border-dark-800 rounded-xl">
+                    <div class="flex items-center gap-2.5 truncate">
+                        <div class="w-7 h-7 rounded-lg bg-dark-800 flex items-center justify-center text-xs font-bold text-zinc-200 shrink-0">
+                            ${acc.label.charAt(0).toUpperCase()}
+                        </div>
+                        <div class="truncate">
+                            <div class="text-xs font-medium text-zinc-200 truncate">${escapeHtml(acc.label)}</div>
+                            <div class="text-[10px] text-zinc-500 truncate">@${escapeHtml(acc.username)}</div>
+                        </div>
+                    </div>
+                    <button onclick="removeAccount('${acc.id}')" class="text-zinc-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-dark-800 transition shrink-0">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            `).join('');
+            initIcons();
+        }
+
+        function renderAccountsDropdown() {
+            const html = accounts.map(acc => `
+                <option value="${acc.id}" ${currentAccount && currentAccount.id === acc.id ? 'selected' : ''}>
+                    ${escapeHtml(acc.label)} (@${escapeHtml(acc.username)})
+                </option>
+            `).join('');
+            document.getElementById('account-select').innerHTML = html;
+            document.getElementById('mobile-account-select').innerHTML = html;
+        }
+
+        // --- GITHUB API HELPER ---
+        async function githubFetch(token, endpoint, options = {}) {
+            const res = await fetch(`https://api.github.com${endpoint}`, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                    ...options.headers
+                }
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || `GitHub error status ${res.status}`);
+            }
+            return res.status !== 204 ? res.json() : null;
+        }
+
+        // --- REPOSITORIES ---
+        async function loadRepositories() {
+            if (!currentAccount) return;
+            setStatus('Loading repositories...');
+            try {
+                repositories = await githubFetch(currentAccount.token, '/user/repos?per_page=100&sort=updated');
+                renderRepoList(repositories);
+                setStatus(`Loaded ${repositories.length} repositories`);
+            } catch (err) {
+                setStatus('Failed to load repositories: ' + err.message);
+            }
+        }
+
+        function renderRepoList(repos) {
+            const listEl = document.getElementById('repo-list');
+            if (repos.length === 0) {
+                listEl.innerHTML = '<div class="p-3 text-xs text-zinc-500">No repositories found.</div>';
+                return;
+            }
+            listEl.innerHTML = repos.map(repo => `
+                <div onclick="selectRepo('${repo.name}')" class="group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition ${currentRepo === repo.name ? 'bg-dark-800 text-white font-medium' : 'text-zinc-400 hover:bg-dark-800/50 hover:text-zinc-200'}">
+                    <div class="flex items-center gap-2 truncate">
+                        <i data-lucide="${repo.private ? 'lock' : 'globe'}" class="w-3.5 h-3.5 shrink-0"></i>
+                        <span class="text-xs truncate">${escapeHtml(repo.name)}</span>
+                    </div>
+                    <span class="text-[10px] text-zinc-600 group-hover:text-zinc-400 shrink-0">${repo.default_branch}</span>
+                </div>
+            `).join('');
+            initIcons();
+        }
+
+        function filterRepos(query) {
+            const filtered = repositories.filter(r => r.name.toLowerCase().includes(query.toLowerCase()));
+            renderRepoList(filtered);
+        }
+
+        function selectRepo(repoName) {
+            currentRepo = repoName;
+            currentPath = '';
+            renderRepoList(repositories);
+            loadCurrentPath();
+            document.getElementById('action-toolbar').classList.remove('hidden');
+            if (window.innerWidth < 768) {
+                toggleMobileSidebar();
+            }
+        }
+
+        // --- CREATE NEW REPOSITORY ---
+        function openNewRepoModal() {
+            document.getElementById('new-repo-name').value = '';
+            document.getElementById('new-repo-desc').value = '';
+            document.getElementById('repo-modal').classList.remove('hidden');
+        }
+
+        function closeNewRepoModal() {
+            document.getElementById('repo-modal').classList.add('hidden');
+        }
+
+        async function createRepository() {
+            const name = document.getElementById('new-repo-name').value.trim();
+            const description = document.getElementById('new-repo-desc').value.trim();
+            const isPrivate = document.getElementById('new-repo-private').checked;
+
+            if (!name) {
+                alert('Please provide a repository name.');
+                return;
+            }
+
+            try {
+                setStatus('Creating repository...');
+                await githubFetch(currentAccount.token, '/user/repos', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: name,
+                        description: description,
+                        private: isPrivate,
+                        auto_init: true // Initializes with README so contents API works immediately
+                    })
+                });
+                closeNewRepoModal();
+                await loadRepositories();
+                selectRepo(name);
+                setStatus(`Repository ${name} created successfully`);
+            } catch (err) {
+                alert('Failed to create repository: ' + err.message);
+                setStatus('Ready');
+            }
+        }
+
+        // --- FILE MANAGER NAVIGATION & CONTENTS ---
+        async function loadCurrentPath() {
+            if (!currentAccount || !currentRepo) return;
+            setStatus(`Loading contents of ${currentRepo}/${currentPath}...`);
+            try {
+                const endpoint = `/repos/${currentAccount.username}/${currentRepo}/contents/${currentPath}`;
+                const data = await githubFetch(currentAccount.token, endpoint);
+                currentContents = Array.isArray(data) ? data : [data];
+                renderBreadcrumbs();
+                renderFileTable(currentContents);
+                setStatus(`Path: /${currentRepo}/${currentPath}`);
+            } catch (err) {
+                if (err.message.includes('404')) {
+                    currentContents = [];
+                    renderBreadcrumbs();
+                    renderFileTable([]);
+                    setStatus(`Directory empty or not initialized.`);
+                } else {
+                    setStatus('Error: ' + err.message);
+                }
+            }
+        }
+
+        function renderBreadcrumbs() {
+            const bc = document.getElementById('breadcrumb');
+            let html = `<button onclick="navigateTo('')" class="hover:text-white transition font-medium shrink-0">${escapeHtml(currentRepo)}</button>`;
+            if (currentPath) {
+                const parts = currentPath.split('/').filter(Boolean);
+                let accumulated = '';
+                parts.forEach((part, index) => {
+                    accumulated += part + '/';
+                    const isLast = index === parts.length - 1;
+                    html += `<span class="text-zinc-600 shrink-0">/</span>`;
+                    if (isLast) {
+                        html += `<span class="text-zinc-200 font-medium truncate">${escapeHtml(part)}</span>`;
+                    } else {
+                        const pCopy = accumulated;
+                        html += `<button onclick="navigateTo('${pCopy}')" class="hover:text-white transition shrink-0">${escapeHtml(part)}</button>`;
+                    }
+                });
+            }
+            bc.innerHTML = html;
+        }
+
+        function navigateTo(path) {
+            currentPath = path;
+            loadCurrentPath();
+        }
+
+        function renderFileTable(items) {
+            const tbody = document.getElementById('file-table-body');
+            if (items.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="py-12 text-center text-zinc-500">
+                            This folder is empty. Upload files or create folders to begin.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            items.sort((a, b) => {
+                if (a.type === b.type) return a.name.localeCompare(b.name);
+                return a.type === 'dir' ? -1 : 1;
+            });
+
+            tbody.innerHTML = items.map(item => {
+                const isDir = item.type === 'dir';
+                const icon = isDir ? 'folder' : getFileIcon(item.name);
+                const sizeStr = isDir ? '--' : formatBytes(item.size);
+                const autoCat = isDir ? 'Directory' : getAutoCategoryFolder(item.name);
+
+                return `
+                    <tr class="hover:bg-dark-900/60 transition group">
+                        <td class="py-2.5 px-4">
+                            <div class="flex items-center gap-2.5 cursor-pointer" onclick="${isDir ? `navigateTo('${item.path}')` : `previewFile('${item.sha}', '${escapeAttr(item.name)}', '${item.download_url}')`}">
+                                <i data-lucide="${icon}" class="w-4 h-4 text-zinc-400 shrink-0"></i>
+                                <span class="text-zinc-200 font-medium truncate max-w-[180px] sm:max-w-xs">${escapeHtml(item.name)}</span>
+                            </div>
+                        </td>
+                        <td class="py-2.5 px-4 text-zinc-400 font-mono text-[11px] whitespace-nowrap">${sizeStr}</td>
+                        <td class="py-2.5 px-4 text-zinc-500 text-[11px] font-mono hidden sm:table-cell">${autoCat}</td>
+                        <td class="py-2.5 px-4 text-right">
+                            <div class="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition">
+                                ${!isDir ? `
+                                    <a href="${item.download_url}" target="_blank" download class="p-1.5 hover:bg-dark-800 rounded-lg text-zinc-400 hover:text-white transition" title="Download">
+                                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                                    </a>
+                                    <button onclick="openMoveModal('${item.sha}', '${escapeAttr(item.path)}', 'copy')" class="p-1.5 hover:bg-dark-800 rounded-lg text-zinc-400 hover:text-white transition hidden sm:inline-flex" title="Copy">
+                                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button onclick="openMoveModal('${item.sha}', '${escapeAttr(item.path)}', 'move')" class="p-1.5 hover:bg-dark-800 rounded-lg text-zinc-400 hover:text-white transition hidden sm:inline-flex" title="Move">
+                                        <i data-lucide="folder-input" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                ` : ''}
+                                <button onclick="deleteItem('${item.path}', '${item.sha}', '${item.type}')" class="p-1.5 hover:bg-dark-800 rounded-lg text-zinc-400 hover:text-red-400 transition" title="Delete">
+                                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            initIcons();
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            if (EXTENSION_CATEGORIES.images.includes(ext)) return 'image';
+            if (EXTENSION_CATEGORIES.media.includes(ext)) return 'film';
+            if (EXTENSION_CATEGORIES.archives.includes(ext)) return 'file-archive';
+            if (['html', 'css', 'js', 'ts', 'json'].includes(ext)) return 'file-code';
+            return 'file-text';
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // --- FILE UPLOAD (WITH AUTO SORTING) ---
+        function triggerUpload() {
+            document.getElementById('hidden-file-input').click();
+        }
+
+        async function handleFileUpload(event) {
+            const files = event.target.files;
+            if (!files || files.length === 0) return;
+
+            setStatus(`Uploading ${files.length} file(s) with auto-sorting...`);
+            
+            for (const file of files) {
+                try {
+                    const base64Content = await toBase64(file);
+                    const categoryFolder = getAutoCategoryFolder(file.name);
+                    const destinationPath = currentPath + categoryFolder + file.name;
+
+                    await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${destinationPath}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            message: `Upload ${file.name} to ${categoryFolder} via reve`,
+                            content: base64Content
+                        })
+                    });
+                } catch (err) {
+                    alert(`Failed to upload ${file.name}: ${err.message}`);
+                }
+            }
+
+            event.target.value = '';
+            loadCurrentPath();
+        }
+
+        function toBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // --- NEW FOLDER ---
+        function openNewFolderModal() {
+            document.getElementById('new-folder-path').value = currentPath;
+            document.getElementById('folder-modal').classList.remove('hidden');
+        }
+
+        function closeNewFolderModal() {
+            document.getElementById('folder-modal').classList.add('hidden');
+        }
+
+        async function createFolder() {
+            const folderPath = document.getElementById('new-folder-path').value.trim();
+            if (!folderPath) return;
+
+            const targetPath = (folderPath.endsWith('/') ? folderPath : folderPath + '/') + '.gitkeep';
+            
+            try {
+                setStatus('Creating folder...');
+                const base64Content = btoa('');
+                await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${targetPath}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        message: `Create folder ${folderPath} via reve`,
+                        content: base64Content
+                    })
+                });
+                closeNewFolderModal();
+                loadCurrentPath();
+            } catch (err) {
+                alert('Failed to create folder: ' + err.message);
+                setStatus('Ready');
+            }
+        }
+
+        // --- EXPANDED FILE PREVIEW ---
+        async function previewFile(sha, name, downloadUrl) {
+            document.getElementById('preview-title').textContent = name;
+            document.getElementById('preview-download-btn').href = downloadUrl;
+            const contentEl = document.getElementById('preview-content');
+            contentEl.innerHTML = '<div class="text-zinc-500 animate-pulse text-xs">Loading preview...</div>';
+            document.getElementById('preview-modal').classList.remove('hidden');
+
+            const ext = name.split('.').pop().toLowerCase();
+
+            try {
+                if (EXTENSION_CATEGORIES.images.includes(ext)) {
+                    contentEl.innerHTML = `<img src="${downloadUrl}" class="max-h-full max-w-full rounded-lg object-contain">`;
+                } else if (EXTENSION_CATEGORIES.media.includes(ext)) {
+                    const isVideo = ['mp4', 'mkv', 'avi', 'mov'].includes(ext);
+                    if (isVideo) {
+                        contentEl.innerHTML = `<video controls class="max-h-full max-w-full rounded-lg"><source src="${downloadUrl}"></video>`;
+                    } else {
+                        contentEl.innerHTML = `<audio controls class="w-full"><source src="${downloadUrl}"></audio>`;
+                    }
+                } else if (ext === 'pdf') {
+                    contentEl.innerHTML = `<iframe src="${downloadUrl}" class="w-full h-full rounded-lg border border-dark-800"></iframe>`;
+                } else {
+                    const fileData = await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${currentPath}${name}`);
+                    const text = atob(fileData.content.replace(/\s/g, ''));
+                    if (ext === 'md') {
+                        // Clean basic rendering for markdown
+                        contentEl.innerHTML = `<div class="w-full h-full p-6 bg-dark-900 rounded-xl text-zinc-200 text-xs overflow-auto prose prose-invert"><pre class="whitespace-pre-wrap font-sans">${escapeHtml(text)}</pre></div>`;
+                    } else {
+                        contentEl.innerHTML = `<pre class="w-full h-full p-4 bg-dark-900 rounded-xl text-zinc-200 text-xs font-mono overflow-auto whitespace-pre-wrap"><code>${escapeHtml(text)}</code></pre>`;
+                    }
+                }
+            } catch (err) {
+                contentEl.innerHTML = `<div class="text-red-400 text-xs text-center space-y-2"><p>Preview unavailable or restricted for this file.</p><a href="${downloadUrl}" target="_blank" class="underline block">Download file instead</a></div>`;
+            }
+        }
+
+        function closePreviewModal() {
+            document.getElementById('preview-modal').classList.add('hidden');
+        }
+
+        // --- DELETE ITEM ---
+        async function deleteItem(path, sha, type) {
+            if (!confirm(`Are you sure you want to delete this ${type === 'dir' ? 'directory contents' : 'file'}?`)) return;
+
+            try {
+                setStatus('Deleting...');
+                if (type === 'dir') {
+                    const items = await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${path}`);
+                    for (const item of items) {
+                        await deleteItem(item.path, item.sha, item.type);
+                    }
+                } else {
+                    await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${path}`, {
+                        method: 'DELETE',
+                        body: JSON.stringify({
+                            message: `Delete ${path} via reve`,
+                            sha: sha
+                        })
+                    });
+                }
+                loadCurrentPath();
+            } catch (err) {
+                alert('Failed to delete: ' + err.message);
+                setStatus('Ready');
+            }
+        }
+
+        // --- COPY / MOVE ---
+        function openMoveModal(sha, path, mode) {
+            activeFileOp = { sha, path, mode };
+            document.getElementById('move-modal-title').textContent = mode === 'copy' ? 'Copy File' : 'Move File';
+            document.getElementById('move-modal-file').textContent = path;
+            
+            const select = document.getElementById('target-repo-select');
+            select.innerHTML = repositories.map(r => `
+                <option value="${r.name}" ${r.name === currentRepo ? 'selected' : ''}>${r.name}</option>
+            `).join('');
+            
+            document.getElementById('target-path-input').value = path.split('/').slice(0, -1).join('/') + '/';
+            document.getElementById('move-modal').classList.remove('hidden');
+        }
+
+        function closeMoveModal() {
+            document.getElementById('move-modal').classList.add('hidden');
+            activeFileOp = null;
+        }
+
+        async function executeMoveOrCopy() {
+            if (!activeFileOp) return;
+            const targetRepo = document.getElementById('target-repo-select').value;
+            const targetDir = document.getElementById('target-path-input').value.trim();
+            const fileName = activeFileOp.path.split('/').pop();
+            const destination = (targetDir.endsWith('/') ? targetDir : targetDir + '/') + fileName;
+
+            try {
+                setStatus(`${activeFileOp.mode === 'copy' ? 'Copying' : 'Moving'} file...`);
+                closeMoveModal();
+
+                const sourceData = await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${activeFileOp.path}`);
+
+                await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${targetRepo}/contents/${destination}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                        message: `${activeFileOp.mode === 'copy' ? 'Copy' : 'Move'} ${activeFileOp.path} to ${destination} via reve`,
+                        content: sourceData.content
+                    })
+                });
+
+                if (activeFileOp.mode === 'move') {
+                    await githubFetch(currentAccount.token, `/repos/${currentAccount.username}/${currentRepo}/contents/${activeFileOp.path}`, {
+                        method: 'DELETE',
+                        body: JSON.stringify({
+                            message: `Remove source of moved file ${activeFileOp.path} via reve`,
+                            sha: activeFileOp.sha
+                        })
+                    });
+                }
+
+                loadCurrentPath();
+                setStatus('Operation completed successfully');
+            } catch (err) {
+                alert('Operation failed: ' + err.message);
+                setStatus('Ready');
+            }
+        }
+
+        // --- LEGAL & POLICY MODALS ---
+        const legalContent = {
+            privacy: `
+                <h4 class="text-white font-semibold text-sm">Privacy Policy</h4>
+                <p><strong>reve</strong> operates entirely client-side as a static web application. We do not operate any backend databases, servers, or analytics trackers.</p>
+                <p>Your GitHub Personal Access Tokens (PAT) and account configurations are stored locally in your browser's encrypted/local storage (`localStorage`) and are sent solely to the official GitHub REST API endpoints.</p>
+            `,
+            terms: `
+                <h4 class="text-white font-semibold text-sm">Terms & Conditions</h4>
+                <p>By using <strong>reve</strong>, you agree that you are solely responsible for compliance with GitHub’s Terms of Service, Acceptable Use Policies, and API rate limits.</p>
+                <p>The application is provided "as is" without warranty of any kind. You assume all responsibility for data stored within your GitHub repositories.</p>
+            `,
+            cookies: `
+                <h4 class="text-white font-semibold text-sm">Cookie Policy</h4>
+                <p><strong>reve</strong> does not use tracking cookies or third-party ad trackers.</p>
+                <p>We use browser `localStorage` strictly to save your account credentials (PAT tokens) and user preference states locally on your device.</p>
+            `,
+            license: `
+                <h4 class="text-white font-semibold text-sm">MIT License</h4>
+                <p>Copyright © 2026 reve</p>
+                <p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software.</p>
+            `
+        };
+
+        function openLegalModal(type) {
+            document.getElementById('legal-title').textContent = type.toUpperCase() + ' POLICY / INFO';
+            document.getElementById('legal-body').innerHTML = legalContent[type] || '<p>Content not found.</p>';
+            document.getElementById('legal-modal').classList.remove('hidden');
+        }
+
+        function closeLegalModal() {
+            document.getElementById('legal-modal').classList.add('hidden');
+        }
+
+        // --- UTILS ---
+        function setStatus(text) {
+            document.getElementById('status-text').textContent = text;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[tag] || tag));
+        }
+
+        function escapeAttr(str) {
+            return str.replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>
