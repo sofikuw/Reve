@@ -417,12 +417,19 @@ class _AccountsScreenState extends State<AccountsScreen> {
 
   String _friendlyError(Object error) {
     final text = error.toString();
-    if (text.contains('Failed host lookup') || text.contains('SocketException')) {
-      return 'Cannot reach github.com. Check your connection — and if this is a '
-          'release APK, make sure the INTERNET permission is present.';
-    }
-    if (text.contains('ClientException') || text.contains('TimeoutException')) {
-      return 'Network request failed. Check your connection and try again.';
+    final lower = text.toLowerCase();
+    final networkish = lower.contains('clientexception') ||
+        lower.contains('socketexception') ||
+        lower.contains('timeoutexception') ||
+        lower.contains('failed host lookup') ||
+        lower.contains('connection abort');
+
+    if (networkish) {
+      if (kIsWeb && _backendController.text.trim().isEmpty) {
+        return 'Browser sign-in needs the OAuth broker: deploy api/oauth.js to '
+            'Vercel or the Cloudflare Worker, then paste its URL under Settings.';
+      }
+      return GithubService.networkErrorMessage(error);
     }
     return text;
   }

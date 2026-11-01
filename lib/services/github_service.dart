@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -23,6 +24,80 @@ class DeviceAuthorization {
 
 class GithubService {
   static const String baseUrl = 'https://api.github.com';
+  static const Duration _timeout = Duration(seconds: 30);
+
+  /// Android aborts sockets eagerly — when the app is backgrounded (we launch
+  /// the browser during device login), when a proxy/VPN resets the TLS
+  /// handshake, or on flaky mobile networks — and Dart surfaces that as
+  /// `ClientException: Software caused connection abort` (errno 103).
+  /// Every call here is safe to repeat, so retry before giving up.
+  static const int _attempts = 3;
+
+  static Future<http.Response> _get(Uri uri, {Map<String, String>? headers}) {
+    return _withRetry(() => http.get(uri, headers: headers).timeout(_timeout));
+  }
+
+  static Future<http.Response> _post(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+  }) {
+    return _withRetry(
+      () => http.post(uri, headers: headers, body: body).timeout(_timeout),
+    );
+  }
+
+  static Future<http.Response> _withRetry(
+    Future<http.Response> Function() send,
+  ) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= _attempts; attempt++) {
+      try {
+        return await send();
+      } catch (error) {
+        if (!_isTransient(error)) rethrow;
+        lastError = error;
+        if (attempt < _attempts) {
+          await Future<void>.delayed(Duration(milliseconds: 400 * attempt));
+        }
+      }
+    }
+    throw Exception(networkErrorMessage(lastError));
+  }
+
+  static bool _isTransient(Object error) {
+    if (error is http.ClientException || error is TimeoutException) return true;
+    final text = error.toString().toLowerCase();
+    return text.contains('socketexception') ||
+        text.contains('software caused connection abort') ||
+        text.contains('connection reset') ||
+        text.contains('connection closed') ||
+        text.contains('connection terminated') ||
+        text.contains('failed host lookup') ||
+        text.contains('network is unreachable');
+  }
+
+  /// Human-readable text for a failed network call (no dart:io types, so this
+  /// file still compiles for the web build).
+  static String networkErrorMessage(Object? error) {
+    final text = error?.toString() ?? '';
+    final lower = text.toLowerCase();
+    if (lower.contains('failed host lookup')) {
+      return 'Cannot reach github.com: DNS lookup failed. Check your '
+          'connection, VPN or private DNS settings.';
+    }
+    if (lower.contains('software caused connection abort') ||
+        lower.contains('connection reset') ||
+        lower.contains('connection closed')) {
+      return 'GitHub dropped the connection (the phone aborted the socket). '
+          'Retry — if it keeps happening, turn off any VPN/ad-blocker or '
+          'keep the app in the foreground while you approve the code.';
+    }
+    if (error is TimeoutException) {
+      return 'github.com did not answer in time. Check your connection.';
+    }
+    return 'Network request failed: $text';
+  }
 
   static Map<String, String> _headers(String token) => {
         'Authorization': 'Bearer $token',
@@ -37,7 +112,7 @@ class GithubService {
 
   /// Validates a PAT or OAuth token and returns the matching account.
   static Future<GithubAccount> verifyAndGetUser(String token, String type) async {
-    final response = await http.get(Uri.parse('$baseUrl/user'), headers: _headers(token));
+    final response = await _get(Uri.parse('$baseUrl/user'), headers: _headers(token));
 
     if (response.statusCode != 200) {
       throw Exception('GitHub rejected that token (${response.statusCode}).');
@@ -78,7 +153,7 @@ class GithubService {
         '&client_id=${Uri.encodeComponent(clientId)}'
         '&scope=${Uri.encodeComponent(scope)}',
       );
-      final response = await http.get(uri);
+      final response = await _get(uri);
       data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode != 200 || data['error'] != null) {
         throw Exception(
@@ -88,7 +163,7 @@ class GithubService {
         );
       }
     } else {
-      final response = await http.post(
+      final response = await _post(
         Uri.parse('https://github.com/login/device/code'),
         headers: const {'Accept': 'application/json'},
         body: {'client_id': clientId, 'scope': scope},
@@ -125,14 +200,14 @@ class GithubService {
     final Map<String, dynamic> data;
 
     if (base.isNotEmpty) {
-      final response = await http.post(
+      final response = await _post(
         Uri.parse('$base/api/oauth'),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({'client_id': clientId, 'device_code': deviceCode}),
       );
       data = jsonDecode(response.body) as Map<String, dynamic>;
     } else {
-      final response = await http.post(
+      final response = await _post(
         Uri.parse('https://github.com/login/oauth/access_token'),
         headers: const {'Accept': 'application/json'},
         body: {
