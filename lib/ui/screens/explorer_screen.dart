@@ -228,7 +228,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     }
     if (provider.selectedRepo == null) {
       return _Prompt(
-        icon: Icons.folder_git_outlined,
+        icon: Icons.folder_outlined,
         title: 'Pick a repository',
         body: 'Choose a storage repository from the dropdown above, or create a new one.',
         action: FilledButton.tonalIcon(
@@ -508,21 +508,21 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       _snack('Pick a repository first');
       return;
     }
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
-    if (result == null) return;
+    final List<PlatformFile> picked = await FilePicker.pickFiles();
+    if (picked.isEmpty) return;
 
     var ok = 0;
     final failures = <String>[];
-    for (final file in result.files) {
-      final bytes = file.bytes;
-      if (bytes == null) {
+    for (final file in picked) {
+      if (!mounted) return;
+      Uint8List bytes;
+      try {
+        bytes = await file.readAsBytes();
+      } catch (e) {
         failures.add('${file.name}: could not read file');
         continue;
       }
-      final outcome = await provider.uploadFile(
-        fileName: file.name,
-        bytes: Uint8List.fromList(bytes),
-      );
+      final outcome = await provider.uploadFile(fileName: file.name, bytes: bytes);
       if (outcome.ok) {
         ok++;
       } else {
@@ -531,7 +531,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     }
     if (!mounted) return;
     if (failures.isEmpty) {
-      _snack(ok == 1 ? '${result.files.first.name} uploaded' : '$ok files uploaded');
+      _snack(ok == 1 ? '${picked.first.name} uploaded' : '$ok files uploaded');
     } else {
       _snack(failures.first);
     }
