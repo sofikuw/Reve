@@ -21,6 +21,7 @@
 
 const GH_AUTHORIZE = 'https://github.com/login/oauth/authorize';
 const GH_TOKEN = 'https://github.com/login/oauth/access_token';
+const GH_DEVICE_CODE = 'https://github.com/login/device/code';
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 const enc = encodeURIComponent;
@@ -108,6 +109,54 @@ async function exchangeCode(code, redirectUri, env) {
   }
   if (!data.access_token) throw new Error('GitHub did not return an access token');
   return data;
+}
+
+async function deviceStart(clientId, scope) {
+  const res = await fetch(GH_DEVICE_CODE, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, scope: scope || 'repo' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    throw new Error(data.error_description || data.error || `Could not start device flow (${res.status})`);
+  }
+  return {
+    device_code: data.device_code,
+    user_code: data.user_code,
+    verification_uri: data.verification_uri || 'https://github.com/login/device',
+    interval: data.interval || 5,
+    expires_in: data.expires_in || 900,
+  };
+}
+
+async function devicePoll(clientId, deviceCode) {
+  const res = await fetch(GH_TOKEN, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: clientId,
+      device_code: deviceCode,
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data.access_token) {
+    return { access_token: data.access_token, token_type: data.token_type, scope: data.scope };
+  }
+  return { error: data.error || 'unknown_error', error_description: data.error_description || '' };
+}
+
+function deviceErrorHint(message) {
+  if (/not found/i.test(message)) {
+    return 'GitHub returned 404 for this client ID. Check the OAuth App client ID and make sure "Device flow" is enabled in its settings.';
+  }
+  return message;
+}
+
+function clientIdAllowed(clientId, env) {
+  if (!env.GITHUB_CLIENT_ID) return true;
+  return clientId === env.GITHUB_CLIENT_ID;
 }
 
 function json(body, status = 200, extra = {}) {
@@ -211,6 +260,21 @@ export default {
         return json({ ok: true, configured, service: 'reve-oauth' });
       }
 
+      /* device flow: start (no secret needed) */
+      if (request.method === 'GET' && q.get('action') === 'device_start') {
+        const cors = { 'Access-Control-Allow-Origin': corsOrigin(request, env) };
+        const clientId = q.get('client_id') || env.GITHUB_CLIENT_ID || '';
+        if (!clientId) return json({ error: 'client_id is required' }, 400, cors);
+        if (!clientIdAllowed(clientId, env)) {
+          return json({ error: 'This broker only serves the configured GITHUB_CLIENT_ID' }, 403, cors);
+        }
+        try {
+          return json(await deviceStart(clientId, q.get('scope') || 'repo'), 200, cors);
+        } catch (e) {
+          return json({ error: deviceErrorHint(e.message) }, 400, cors);
+        }
+      }
+
       /* start */
       if (request.method === 'GET' && q.get('action') === 'start') {
         if (!configured) return json({ error: 'Worker is missing GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET' }, 500);
@@ -267,13 +331,23 @@ export default {
         }
       }
 
-      /* JSON exchange for native clients */
+      /* JSON endpoints for native / browser clients */
       if (request.method === 'POST') {
         const cors = { 'Access-Control-Allow-Origin': corsOrigin(request, env) };
-        if (!configured) return json({ error: 'Worker is not configured' }, 500, cors);
         const body = await request.json().catch(() => ({}));
+
+        if (body.device_code) {
+          const clientId = body.client_id || env.GITHUB_CLIENT_ID || q.get('client_id') || '';
+          if (!clientId) return json({ error: 'client_id is required' }, 400, cors);
+          if (!clientIdAllowed(clientId, env)) {
+            return json({ error: 'This broker only serves the configured GITHUB_CLIENT_ID' }, 403, cors);
+          }
+          return json(await devicePoll(clientId, body.device_code), 200, cors);
+        }
+
+        if (!configured) return json({ error: 'Worker is not configured' }, 500, cors);
         const code = body.code || q.get('code');
-        if (!code) return json({ error: 'code is required' }, 400, cors);
+        if (!code) return json({ error: 'code or device_code is required' }, 400, cors);
         const data = await exchangeCode(code, body.redirect_uri || callbackUri, env);
         return json({
           access_token: data.access_token,
@@ -291,6 +365,8 @@ export default {
             start: '/api/oauth?action=start&client_id=…&origin=…&nonce=…',
             callback: '/api/oauth (register this as the OAuth App callback URL)',
             exchange: 'POST /api/oauth {"code":"…"}',
+            device_start: '/api/oauth?action=device_start&client_id=…&scope=repo',
+            device_poll: 'POST /api/oauth {"client_id":"…","device_code":"…"}',
             health: '/api/oauth?action=health',
           },
         });

@@ -624,6 +624,25 @@ dialog.wide .dialog-card { height: 86dvh; }
         <button class="btn filled" style="width:100%;margin-bottom:10px" onclick="loginOAuth()">
           <svg class="i i-18"><use href="#i-login"/></svg> Sign in with GitHub
         </button>
+        <button class="btn tonal" style="width:100%;margin-bottom:10px" onclick="startDeviceFlow()">
+          <svg class="i i-18"><use href="#i-key"/></svg> Sign in with a device code
+        </button>
+        <div id="devicePanel" class="hidden" style="margin-bottom:12px;padding:14px;border:1px solid var(--outline-variant);border-radius:14px;background:var(--surface-container-low)">
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--on-surface-variant)">
+            Open <b>github.com/login/device</b> and enter this code:
+          </p>
+          <div id="deviceCode" style="font:700 26px/1.2 ui-monospace,Menlo,Consolas,monospace;letter-spacing:6px;text-align:center;padding:10px 0;user-select:all">--------</div>
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <a class="btn tonal small" style="flex:1" href="https://github.com/login/device" target="_blank" rel="noopener">
+              <svg class="i i-16"><use href="#i-external"/></svg> Open GitHub
+            </a>
+            <button class="btn tonal small" style="flex:1" onclick="copyDeviceCode()">
+              <svg class="i i-16"><use href="#i-copy"/></svg> Copy code
+            </button>
+            <button class="btn text small" onclick="stopDeviceFlow(true)">Cancel</button>
+          </div>
+          <div class="help" id="deviceStatus">Waiting for authorization…</div>
+        </div>
         <details style="margin-top:4px">
           <summary style="cursor:pointer;font-size:12px;color:var(--on-surface-variant);margin-bottom:8px">Paste an OAuth access token instead</summary>
           <div class="field">
@@ -679,7 +698,7 @@ dialog.wide .dialog-card { height: 86dvh; }
     <div class="dialog-head">
       <div style="flex:1">
         <h2>OAuth backend</h2>
-        <p>OAuth needs a tiny server to exchange the authorization code, because GitHub requires the client secret. Point this at your Cloudflare Worker or Vercel deployment.</p>
+        <p>OAuth needs a tiny server: GitHub requires the client secret for the popup flow, and it blocks browser CORS for the device-code flow. Point this at your Cloudflare Worker or Vercel deployment — the same broker serves both.</p>
       </div>
       <button class="icon-btn" onclick="closeDialog('configDialog')" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
@@ -1028,6 +1047,125 @@ function oauthClientId() {
 let oauthPopup = null;
 let oauthNonce = null;
 
+/* ------------------------------------------------------------
+   Device flow (OAuth public client) — proxied through the broker,
+   because github.com/login/device/code sends no CORS headers.
+   ------------------------------------------------------------ */
+let deviceFlow = null;
+
+function stopDeviceFlow(notify) {
+  if (deviceFlow && deviceFlow.timer) clearTimeout(deviceFlow.timer);
+  deviceFlow = null;
+  const panel = $('devicePanel');
+  if (panel) panel.classList.add('hidden');
+  if (notify) setStatus('Device sign-in cancelled');
+}
+
+async function startDeviceFlow() {
+  const clientId = oauthClientId();
+  if (!clientId) return snack('Add your OAuth App client ID in the field above', true);
+  localStorage.setItem(LS.clientId, clientId);
+
+  const base = backendBase();
+  if (location.protocol === 'file:') {
+    return snack('Device sign-in needs the broker deployed (set it in Settings) — or use a PAT', true);
+  }
+
+  stopDeviceFlow(false);
+  setBusy(true, 'Requesting device code…');
+  try {
+    const res = await fetch(`${base}/api/oauth?action=device_start&client_id=${enc(clientId)}&scope=repo`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `Broker returned ${res.status}. Is api/oauth.js deployed?`);
+    }
+
+    deviceFlow = {
+      clientId,
+      deviceCode: data.device_code,
+      interval: Math.max(5, Number(data.interval) || 5) * 1000,
+      timer: null,
+      active: true,
+    };
+    $('deviceCode').textContent = data.user_code;
+    $('deviceStatus').textContent = 'Waiting for authorization…';
+    $('devicePanel').classList.remove('hidden');
+    setStatus('Waiting for GitHub authorization…');
+    scheduleDevicePoll();
+  } catch (e) {
+    snack(e.message, true);
+  } finally {
+    setBusy(false, 'Ready');
+  }
+}
+
+function scheduleDevicePoll() {
+  if (!deviceFlow || !deviceFlow.active) return;
+  deviceFlow.timer = setTimeout(pollDeviceFlow, deviceFlow.interval);
+}
+
+async function pollDeviceFlow() {
+  if (!deviceFlow || !deviceFlow.active) return;
+  const { clientId, deviceCode } = deviceFlow;
+  try {
+    const res = await fetch(`${backendBase()}/api/oauth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: clientId, device_code: deviceCode }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!deviceFlow) return;
+
+    if (data.access_token) {
+      const token = data.access_token;
+      stopDeviceFlow(false);
+      setBusy(true, 'Verifying OAuth token…');
+      try {
+        const acc = await verifyToken(token);
+        await addVerifiedAccount(acc, 'oauth');
+        closeDialog('accountsDialog');
+        snack(`Signed in as @${acc.login}`);
+      } catch (e) {
+        snack(e.message, true);
+      } finally {
+        setBusy(false, 'Ready');
+      }
+      return;
+    }
+
+    if (data.error === 'slow_down') {
+      deviceFlow.interval += 5000;
+      $('deviceStatus').textContent = 'Waiting for authorization… (slowing down)';
+    } else if (data.error === 'expired_token') {
+      stopDeviceFlow(false);
+      return snack('The device code expired — start again', true);
+    } else if (data.error === 'access_denied') {
+      stopDeviceFlow(false);
+      return snack('Authorization was cancelled on GitHub', true);
+    } else if (data.error && data.error !== 'authorization_pending') {
+      stopDeviceFlow(false);
+      return snack(data.error_description || data.error, true);
+    } else {
+      $('deviceStatus').textContent = 'Waiting for authorization…';
+    }
+    scheduleDevicePoll();
+  } catch (e) {
+    if (!deviceFlow) return;
+    $('deviceStatus').textContent = 'Network hiccup — retrying…';
+    deviceFlow.interval = Math.min(deviceFlow.interval + 5000, 30000);
+    scheduleDevicePoll();
+  }
+}
+
+function copyDeviceCode() {
+  const code = $('deviceCode') && $('deviceCode').textContent.trim();
+  if (!code) return;
+  navigator.clipboard?.writeText(code).then(
+    () => snack('Code copied'),
+    () => snack('Copy failed — select the code manually', true),
+  );
+}
+
 function loginOAuth() {
   const clientId = oauthClientId();
   if (!clientId) return snack('Add your OAuth App client ID in the field above', true);
@@ -1134,6 +1272,7 @@ async function onAccountChanged() {
 }
 
 function setAuthTab(tab) {
+  if (tab !== 'oauth') stopDeviceFlow(false);
   const isPat = tab === 'pat';
   $('tabPat').classList.toggle('sel', isPat);
   $('tabOauth').classList.toggle('sel', !isPat);
@@ -1142,6 +1281,7 @@ function setAuthTab(tab) {
 }
 
 function openAccounts() {
+  stopDeviceFlow(false);
   renderAccounts();
   $('clientIdInput').value = localStorage.getItem(LS.clientId) || '';
   openDialog('accountsDialog');
@@ -1832,6 +1972,9 @@ function closeDialog(id) {
 document.querySelectorAll('dialog').forEach((d) => {
   d.addEventListener('click', (e) => {
     if (e.target === d) d.close();
+  });
+  d.addEventListener('close', () => {
+    if (d.id === 'accountsDialog') stopDeviceFlow(false);
   });
 });
 

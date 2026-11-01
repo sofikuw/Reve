@@ -11,6 +11,16 @@
  *   POST /api/oauth  { "code": "…" }
  *        -> JSON token exchange for native clients (CORS enabled).
  *
+ *   Device flow (public client, no secret required):
+ *   GET  /api/oauth?action=device_start&client_id=…&scope=repo
+ *        -> JSON { device_code, user_code, verification_uri, interval, expires_in }
+ *   POST /api/oauth  { "client_id": "…", "device_code": "…" }
+ *        -> JSON { access_token } or { error: 'authorization_pending' | … }
+ *
+ *   Browsers cannot call github.com/login/device/code directly (no CORS), so the
+ *   web client proxies those two calls through this function. Native clients
+ *   (Android/iOS) may call GitHub directly with the same client_id.
+ *
  * Environment variables (Vercel → Project → Settings → Environment Variables):
  *   GITHUB_CLIENT_ID      required
  *   GITHUB_CLIENT_SECRET  required
@@ -21,6 +31,7 @@
 
 const GH_AUTHORIZE = 'https://github.com/login/oauth/authorize';
 const GH_TOKEN = 'https://github.com/login/oauth/access_token';
+const GH_DEVICE_CODE = 'https://github.com/login/device/code';
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 const enc = encodeURIComponent;
@@ -106,6 +117,64 @@ async function exchangeCode(code, redirectUri, env) {
   }
   if (!data.access_token) throw new Error('GitHub did not return an access token');
   return data;
+}
+
+async function deviceStart(clientId, scope, env) {
+  const res = await fetch(GH_DEVICE_CODE, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, scope: scope || 'repo' }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    throw new Error(data.error_description || data.error || `Could not start device flow (${res.status})`);
+  }
+  return {
+    device_code: data.device_code,
+    user_code: data.user_code,
+    verification_uri: data.verification_uri || 'https://github.com/login/device',
+    interval: data.interval || 5,
+    expires_in: data.expires_in || 900,
+  };
+}
+
+async function devicePoll(clientId, deviceCode, env) {
+  const res = await fetch(GH_TOKEN, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: clientId,
+      device_code: deviceCode,
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data.access_token) {
+    return { access_token: data.access_token, token_type: data.token_type, scope: data.scope };
+  }
+  return { error: data.error || 'unknown_error', error_description: data.error_description || '' };
+}
+
+function deviceErrorHint(message) {
+  if (/not found/i.test(message)) {
+    return 'GitHub returned 404 for this client ID. Check the OAuth App client ID and make sure "Device flow" is enabled in its settings.';
+  }
+  return message;
+}
+
+function clientIdAllowed(clientId, env) {
+  if (!env.GITHUB_CLIENT_ID) return true;
+  return clientId === env.GITHUB_CLIENT_ID;
+}
+
+function readJsonBody(body) {
+  if (!body) return {};
+  if (typeof body === 'object') return body;
+  try {
+    return JSON.parse(body);
+  } catch (_) {
+    return {};
+  }
 }
 
 function handoffHtml({ token, error, nonce, origin }) {
@@ -194,6 +263,21 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ ok: true, configured, service: 'reve-oauth' });
     }
 
+    /* ---------- device flow: start ---------- */
+    if (req.method === 'GET' && q.get('action') === 'device_start') {
+      res.setHeader('Access-Control-Allow-Origin', corsOrigin(req, env));
+      const clientId = q.get('client_id') || env.GITHUB_CLIENT_ID || '';
+      if (!clientId) return res.status(400).json({ error: 'client_id is required' });
+      if (!clientIdAllowed(clientId, env)) {
+        return res.status(403).json({ error: 'This broker only serves the configured GITHUB_CLIENT_ID' });
+      }
+      try {
+        return res.status(200).json(await deviceStart(clientId, q.get('scope') || 'repo', env));
+      } catch (e) {
+        return res.status(400).json({ error: deviceErrorHint(e.message) });
+      }
+    }
+
     /* ---------- start ---------- */
     if (req.method === 'GET' && q.get('action') === 'start') {
       if (!configured) {
@@ -238,13 +322,24 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    /* ---------- JSON exchange for native clients ---------- */
+    /* ---------- JSON endpoints for native / browser clients ---------- */
     if (req.method === 'POST') {
       res.setHeader('Access-Control-Allow-Origin', corsOrigin(req, env));
+      const body = readJsonBody(req.body);
+
+      // Device-flow polling needs no secret, only the public client id.
+      if (body.device_code) {
+        const clientId = body.client_id || env.GITHUB_CLIENT_ID || q.get('client_id') || '';
+        if (!clientId) return res.status(400).json({ error: 'client_id is required' });
+        if (!clientIdAllowed(clientId, env)) {
+          return res.status(403).json({ error: 'This broker only serves the configured GITHUB_CLIENT_ID' });
+        }
+        return res.status(200).json(await devicePoll(clientId, body.device_code, env));
+      }
+
       if (!configured) return res.status(500).json({ error: 'Server is not configured' });
-      const body = req.body && typeof req.body === 'object' ? req.body : {};
       const code = body.code || q.get('code');
-      if (!code) return res.status(400).json({ error: 'code is required' });
+      if (!code) return res.status(400).json({ error: 'code or device_code is required' });
       const data = await exchangeCode(code, body.redirect_uri || callbackUri, env);
       return res.status(200).json({
         access_token: data.access_token,
@@ -262,6 +357,8 @@ module.exports = async function handler(req, res) {
           start: '/api/oauth?action=start&client_id=…&origin=…&nonce=…',
           callback: '/api/oauth (register this as the OAuth App callback URL)',
           exchange: 'POST /api/oauth {"code":"…"}',
+          device_start: '/api/oauth?action=device_start&client_id=…&scope=repo',
+          device_poll: 'POST /api/oauth {"client_id":"…","device_code":"…"}',
           health: '/api/oauth?action=health',
         },
       });

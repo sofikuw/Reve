@@ -19,14 +19,24 @@ class AccountsScreen extends StatefulWidget {
 
 class _AccountsScreenState extends State<AccountsScreen> {
   final _tokenController = TextEditingController();
-  final _clientIdController = TextEditingController(text: AppConfig.oauthClientId);
+  final _clientIdController = TextEditingController();
+  final _backendController = TextEditingController();
   bool _obscure = true;
   String _mode = 'pat';
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<ReveProvider>();
+    _clientIdController.text = provider.oauthClientId;
+    _backendController.text = provider.oauthBackend;
+  }
 
   @override
   void dispose() {
     _tokenController.dispose();
     _clientIdController.dispose();
+    _backendController.dispose();
     super.dispose();
   }
 
@@ -178,28 +188,37 @@ class _AccountsScreenState extends State<AccountsScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Only the client ID is used. The client secret stays on your backend / never ships in the app.',
+          'Device flow only needs the public client ID — enable "Device flow" '
+          'on the OAuth App. The client secret never ships in the app.',
           style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
         ),
         const SizedBox(height: 14),
-        if (!kIsWeb)
-          FilledButton.icon(
-            onPressed: _startDeviceFlow,
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in with GitHub'),
-          )
-        else
-          Card(
-            color: cs.surfaceContainerHighest,
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Text(
-                'The browser popup flow lives in the web build (index.html). '
-                'Here you can paste an OAuth access token instead.',
-                style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
-              ),
+        if (kIsWeb) ...[
+          TextField(
+            controller: _backendController,
+            autocorrect: false,
+            enableSuggestions: false,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'OAuth broker URL',
+              hintText: 'https://reve-oauth.you.workers.dev',
+              border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            'Browsers cannot call the device endpoint directly (CORS), so the '
+            'GitHub calls are proxied through your broker. Same broker as the '
+            'popup flow — no secret needed for device codes.',
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+        ],
+        FilledButton.icon(
+          onPressed: _startDeviceFlow,
+          icon: const Icon(Icons.login),
+          label: const Text('Sign in with GitHub device code'),
+        ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: _promptOAuthToken,
@@ -259,14 +278,26 @@ class _AccountsScreenState extends State<AccountsScreen> {
 
   Future<void> _startDeviceFlow() async {
     final clientId = _clientIdController.text.trim();
+    final backend = _backendController.text.trim();
     if (clientId.isEmpty) {
       _snack('Add your OAuth App client ID first');
       return;
     }
+    if (kIsWeb && backend.isEmpty) {
+      _snack('Add your OAuth broker URL — browsers need it for device codes');
+      return;
+    }
+
+    final provider = context.read<ReveProvider>();
+    await provider.setOAuthSettings(clientId: clientId, backend: backend);
 
     DeviceAuthorization auth;
     try {
-      auth = await GithubService.startDeviceFlow(clientId, scope: AppConfig.oauthScope);
+      auth = await GithubService.startDeviceFlow(
+        clientId,
+        scope: AppConfig.oauthScope,
+        backend: backend.isEmpty ? null : backend,
+      );
     } catch (e) {
       _snack(e.toString());
       return;
@@ -287,11 +318,14 @@ class _AccountsScreenState extends State<AccountsScreen> {
               if (busy || cancelled) return;
               busy = true;
               try {
-                final token = await GithubService.pollDeviceFlow(clientId, auth.deviceCode);
+                final token = await GithubService.pollDeviceFlow(
+                  clientId,
+                  auth.deviceCode,
+                  backend: backend.isEmpty ? null : backend,
+                );
                 if (token != null && dialogContext.mounted) {
                   timer?.cancel();
                   Navigator.of(dialogContext).pop();
-                  final provider = context.read<ReveProvider>();
                   final ok = await provider.addAccount(token, 'oauth');
                   if (!mounted) return;
                   _snack(ok
@@ -313,7 +347,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
                 Duration(seconds: auth.intervalSeconds < 5 ? 5 : auth.intervalSeconds),
                 (_) => poll(),
               );
-              Future<void>.delayed(const Duration(seconds: 1), poll);
             }
 
             return AlertDialog(

@@ -59,48 +59,90 @@ class GithubService {
   // OAuth device flow (no client secret, no backend required)
   // ---------------------------------------------------------------------------
 
+  /// Starts a device-flow session.
+  ///
+  /// Native builds talk to github.com directly. Flutter web cannot, because
+  /// GitHub sends no CORS headers for `/login/device/code`, so pass [backend]
+  /// (your reve OAuth broker) and the request is proxied through it instead.
   static Future<DeviceAuthorization> startDeviceFlow(
     String clientId, {
     String scope = 'repo',
+    String? backend,
   }) async {
-    final response = await http.post(
-      Uri.parse('https://github.com/login/device/code'),
-      headers: const {'Accept': 'application/json'},
-      body: {'client_id': clientId, 'scope': scope},
-    );
+    final base = backend?.trim().replaceAll(RegExp(r'/+$'), '') ?? '';
+    final Map<String, dynamic> data;
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode != 200 || data['error'] != null) {
-      throw Exception(
-        data['error_description']?.toString() ??
-            'Could not start the device flow (${response.statusCode}). Is "Device flow" enabled on the OAuth App?',
+    if (base.isNotEmpty) {
+      final uri = Uri.parse(
+        '$base/api/oauth?action=device_start'
+        '&client_id=${Uri.encodeComponent(clientId)}'
+        '&scope=${Uri.encodeComponent(scope)}',
       );
+      final response = await http.get(uri);
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200 || data['error'] != null) {
+        throw Exception(
+          data['error_description']?.toString() ??
+              data['error']?.toString() ??
+              'Could not start the device flow (${response.statusCode}).',
+        );
+      }
+    } else {
+      final response = await http.post(
+        Uri.parse('https://github.com/login/device/code'),
+        headers: const {'Accept': 'application/json'},
+        body: {'client_id': clientId, 'scope': scope},
+      );
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode != 200 || data['error'] != null) {
+        throw Exception(
+          data['error_description']?.toString() ??
+              'Could not start the device flow (${response.statusCode}). '
+                  'Is "Device flow" enabled on the OAuth App?',
+        );
+      }
     }
 
     return DeviceAuthorization(
       deviceCode: data['device_code'] as String,
       userCode: data['user_code'] as String,
-      verificationUri: (data['verification_uri'] ?? 'https://github.com/login/device') as String,
-      intervalSeconds: (data['interval'] as int?) ?? 5,
-      expiresInSeconds: (data['expires_in'] as int?) ?? 900,
+      verificationUri:
+          (data['verification_uri'] ?? 'https://github.com/login/device') as String,
+      intervalSeconds: (data['interval'] as num?)?.toInt() ?? 5,
+      expiresInSeconds: (data['expires_in'] as num?)?.toInt() ?? 900,
     );
   }
 
   /// Returns an access token once the user authorized the app.
   /// Returns `null` while GitHub still reports `authorization_pending` or
   /// `slow_down` — the caller should keep polling.
-  static Future<String?> pollDeviceFlow(String clientId, String deviceCode) async {
-    final response = await http.post(
-      Uri.parse('https://github.com/login/oauth/access_token'),
-      headers: const {'Accept': 'application/json'},
-      body: {
-        'client_id': clientId,
-        'device_code': deviceCode,
-        'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
-      },
-    );
+  static Future<String?> pollDeviceFlow(
+    String clientId,
+    String deviceCode, {
+    String? backend,
+  }) async {
+    final base = backend?.trim().replaceAll(RegExp(r'/+$'), '') ?? '';
+    final Map<String, dynamic> data;
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (base.isNotEmpty) {
+      final response = await http.post(
+        Uri.parse('$base/api/oauth'),
+        headers: const {'Content-Type': 'application/json'},
+        body: jsonEncode({'client_id': clientId, 'device_code': deviceCode}),
+      );
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+    } else {
+      final response = await http.post(
+        Uri.parse('https://github.com/login/oauth/access_token'),
+        headers: const {'Accept': 'application/json'},
+        body: {
+          'client_id': clientId,
+          'device_code': deviceCode,
+          'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+        },
+      );
+      data = jsonDecode(response.body) as Map<String, dynamic>;
+    }
     final token = data['access_token'] as String?;
     if (token != null && token.isNotEmpty) return token;
 

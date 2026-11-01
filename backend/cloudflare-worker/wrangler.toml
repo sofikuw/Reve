@@ -2,10 +2,12 @@
 #
 #   npm i -g wrangler
 #   wrangler login
-#   wrangler secret put GITHUB_CLIENT_ID
-#   wrangler secret put GITHUB_CLIENT_SECRET
-#   wrangler secret put ALLOWED_ORIGINS   # optional: https://you.github.io
+#   wrangler secret put GITHUB_CLIENT_ID      # required (device flow + popup)
+#   wrangler secret put GITHUB_CLIENT_SECRET  # popup flow only
+#   wrangler secret put ALLOWED_ORIGINS       # optional: https://you.github.io
 #   wrangler deploy
+#
+# Device flow needs no client secret. Only the web popup flow does.
 #
 # Then register https://<name>.<subdomain>.workers.dev/api/oauth
 # as the OAuth App callback URL on github.com/settings/developers.

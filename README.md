@@ -29,6 +29,8 @@ Two clients ship in this repo:
   switch branches, follow the default branch automatically.
 - **Full file operations** — upload (multi-file + drag and drop), download,
   create folder, rename, recursive delete, list and grid views.
+- **Device-code OAuth** — no client secret, no redirect juggling; works in the
+  APK and (through the broker) on the web.
 - **Honest limits** — GitHub's Contents API caps a single file at 100 MB;
   `reve` warns at 95 MB before wasting an upload.
 - **Material 3** — light/dark/auto themes, responsive layout, keyboard friendly.
@@ -76,10 +78,11 @@ OAuth needs an OAuth App (<https://github.com/settings/developers>). The
 
 Three supported ways to obtain a token:
 
-1. **Device flow** (Flutter app, Android) — no backend and no secret required.
-   Enable *Device flow* in the OAuth App settings and build with
-   `--dart-define=OAUTH_CLIENT_ID=Iv1.xxxx`. The app shows a code, you approve
-   it at <https://github.com/login/device>.
+1. **Device flow** — the recommended no-secret route, available in both
+   clients. The app/web shows an 8-character code, you approve it at
+   <https://github.com/login/device>, and the client polls for the token.
+   Native builds talk to GitHub directly; browsers go through the broker
+   because GitHub sends no CORS headers for `/login/device/code`.
 2. **Popup broker** (web app) — a tiny serverless function performs the
    `code → token` exchange and `postMessage`s the token back to the opener.
    This is the full click-through experience.
@@ -91,6 +94,31 @@ Three supported ways to obtain a token:
 
 ---
 
+## Device flow setup (2 minutes)
+
+GitHub has **no API to create OAuth Apps or toggle device flow** — this part is
+a one-time click in the web UI. The PAT cannot do it.
+
+1. Open <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**.
+   - *Application name*: `reve`
+   - *Homepage URL*: your deployment, e.g. `https://sofikuw.github.io/Reve/`
+   - *Authorization callback URL*: `https://sofikuw.github.io/Reve/`
+     (only used by the popup flow; device flow ignores it)
+2. Open the new app → tick **Enable Device Flow** → **Update application**.
+3. Copy the **Client ID** (`Iv1.…` or `Ov23li…`).
+
+Then paste the client ID once — no rebuild required:
+
+| Client | Where |
+| --- | --- |
+| Web (`index.html`) | Account dialog → **OAuth** tab → *GitHub OAuth App client ID* → **Sign in with a device code** |
+| Flutter app | **Accounts → OAuth** → *OAuth App client ID* → **Sign in with GitHub device code** |
+
+The ID is stored in `localStorage` / Hive on first use. Flutter web also asks
+for the **broker URL**; Android does not need it. Optionally bake defaults in at
+build time with `--dart-define=OAUTH_CLIENT_ID=…` and
+`--dart-define=OAUTH_BACKEND=…`.
+
 ## OAuth broker (optional)
 
 Both implementations follow the same contract:
@@ -100,10 +128,18 @@ Both implementations follow the same contract:
 | `GET /api/oauth?action=start&client_id=…&origin=…&nonce=…` | `302` to GitHub authorize |
 | `GET /api/oauth?code=…&state=…` | HTML page that `postMessage`s `{type:'reve:oauth', token, error, state}` to the opener, with a copyable-token fallback |
 | `POST /api/oauth` `{code}` | `application/json` exchange (CORS) |
+| `GET /api/oauth?action=device_start&client_id=…&scope=repo` | device code + user code (CORS) |
+| `POST /api/oauth` `{client_id, device_code}` | token, or `{error:'authorization_pending' \| 'slow_down' \| …}` |
 | `GET /api/oauth?action=health` | `{ok:true}` |
 
 `state` is `base64url({o,n,e})` + `.` + `HMAC-SHA256` keyed with
 `GITHUB_CLIENT_SECRET`, valid for 10 minutes.
+
+**Device flow needs no secret at all** — only the public client ID. A broker
+deployed for device codes alone can run with `GITHUB_CLIENT_ID` only; the
+popup flow additionally needs `GITHUB_CLIENT_SECRET`. When `GITHUB_CLIENT_ID`
+is set, the broker refuses other client IDs so it cannot be used as an open
+relay.
 
 ### Option A — Cloudflare Worker
 
@@ -112,12 +148,9 @@ cd backend/cloudflare-worker
 npm install
 npx wrangler login
 
-# public vars
-#   GITHUB_CLIENT_ID  in wrangler.toml [vars]
-# secret
-npx wrangler secret put GITHUB_CLIENT_SECRET
-
-npm run deploy
+npx wrangler secret put GITHUB_CLIENT_ID      # device flow needs only this
+npx wrangler secret put GITHUB_CLIENT_SECRET  # popup flow only
+npx wrangler deploy
 ```
 
 Then set the OAuth App **Authorization callback URL** to
@@ -139,8 +172,14 @@ Same-origin deploy: callback URL `https://<project>.vercel.app/api/oauth`.
 
 ### Wiring the web app
 
-Account dialog → **OAuth** tab → set the **broker URL** and **client ID**
-(stored in `localStorage`), then press *Sign in with GitHub*.
+Account dialog → **OAuth** tab → set the **client ID**, press
+*Sign in with a device code* (needs the broker URL from **Settings**, defaulting
+to this site's origin on Vercel), or *Sign in with GitHub* for the popup flow.
+Both values live in `localStorage`.
+
+Verify a deployment with
+`curl https://<broker>/api/oauth?action=health` →
+`{"ok":true,"configured":…,"service":"reve-oauth"}`.
 
 ---
 

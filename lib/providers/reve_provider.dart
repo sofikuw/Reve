@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../config.dart';
 import '../models/account.dart';
 import '../models/file_item.dart';
 import '../services/github_service.dart';
@@ -16,6 +17,8 @@ class ReveProvider with ChangeNotifier {
   static const String _boxName = 'reve_accounts_box';
   static const String _activeIdKey = 'active_account_id';
   static const String _autoSortKey = 'auto_sort_uploads';
+  static const String _clientIdKey = 'oauth_client_id';
+  static const String _backendKey = 'oauth_backend';
 
   /// GitHub's Contents API rejects anything above 100 MB. Base64 + JSON adds
   /// overhead, so stay comfortably below it.
@@ -36,6 +39,8 @@ class ReveProvider with ChangeNotifier {
   String? _errorMessage;
   bool _autoSortUploads = true;
   int _lastRateLimit = -1;
+  String _oauthClientId = AppConfig.oauthClientId;
+  String _oauthBackend = AppConfig.oauthBackend;
 
   List<GithubAccount> get accounts => List.unmodifiable(_accounts);
   GithubAccount? get activeAccount => _activeAccount;
@@ -51,6 +56,8 @@ class ReveProvider with ChangeNotifier {
   bool get autoSortUploads => _autoSortUploads;
   int get lastRateLimit => _lastRateLimit;
   bool get isConnected => _activeAccount != null;
+  String get oauthClientId => _oauthClientId;
+  String get oauthBackend => _oauthBackend;
 
   String get owner =>
       (_selectedRepo?['owner']?['login'] as String?) ?? '';
@@ -70,6 +77,8 @@ class ReveProvider with ChangeNotifier {
         ..addAll((rawAccounts as List)
             .map((e) => GithubAccount.fromJson(Map<String, dynamic>.from(e as Map))));
       _autoSortUploads = box.get(_autoSortKey, defaultValue: true) as bool;
+      _oauthClientId = (box.get(_clientIdKey, defaultValue: _oauthClientId) as String?) ?? _oauthClientId;
+      _oauthBackend = (box.get(_backendKey, defaultValue: _oauthBackend) as String?) ?? _oauthBackend;
 
       final activeId = box.get(_activeIdKey);
       if (_accounts.isNotEmpty) {
@@ -92,6 +101,19 @@ class ReveProvider with ChangeNotifier {
       await box.delete(_activeIdKey);
     }
     await box.put(_autoSortKey, _autoSortUploads);
+    await box.put(_clientIdKey, _oauthClientId);
+    await box.put(_backendKey, _oauthBackend);
+  }
+
+  Future<void> setOAuthSettings({String? clientId, String? backend}) async {
+    if (clientId != null) {
+      _oauthClientId = clientId.trim();
+    }
+    if (backend != null) {
+      _oauthBackend = backend.trim().replaceAll(RegExp(r'/+$'), '');
+    }
+    await _saveToBox();
+    notifyListeners();
   }
 
   void toggleAutoSort(bool value) {
