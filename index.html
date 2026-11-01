@@ -691,7 +691,7 @@ dialog.wide .dialog-card { height: 86dvh; }
     <div class="dialog-head">
       <div style="flex:1">
         <h2>OAuth backend</h2>
-        <p>OAuth needs a tiny server: GitHub requires the client secret for the popup flow, and it blocks browser CORS for the device-code flow. Point this at your Cloudflare Worker or Vercel deployment — the same broker serves both.</p>
+        <p>OAuth needs a tiny server: GitHub requires the client secret for the popup flow, and it blocks browser CORS for the device-code flow. Defaults to the project's worker, https://reve-oauth.sofikuw.workers.dev; point it elsewhere to self-host.</p>
       </div>
       <button class="icon-btn" onclick="closeDialog('configDialog')" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
@@ -768,6 +768,9 @@ const API = 'https://api.github.com';
 
 /* Public OAuth App client ID (not a secret). Device flow only needs this. */
 const DEFAULT_CLIENT_ID = 'Ov23liKqKI4YQP1Ie3OQ';
+// Broker that performs the device-code exchange for browsers (GitHub
+// sends no CORS headers). Override in Settings to self-host.
+const DEFAULT_BACKEND = 'https://reve-oauth.sofikuw.workers.dev';
 
 /* ============================================================
    Small helpers
@@ -1017,7 +1020,7 @@ async function loginPat() {
 
 function backendBase() {
   const custom = (localStorage.getItem(LS.backend) || '').trim().replace(/\/+$/, '');
-  return custom || location.origin;
+  return custom || DEFAULT_BACKEND;
 }
 
 function oauthClientId() {
@@ -1062,7 +1065,7 @@ async function startDeviceFlow() {
     const res = await fetch(`${base}/api/oauth?action=device_start&client_id=${enc(clientId)}&scope=repo`);
     const isJson = (res.headers.get('content-type') || '').includes('json');
     if (!isJson) {
-      throw new Error(`No OAuth broker at ${base}. Deploy api/oauth.js (Vercel) or the Cloudflare Worker, then paste its URL in Settings.`);
+      throw new Error(`No OAuth broker at ${base}. Set the worker URL in Settings (default: ${DEFAULT_BACKEND}).`);
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {

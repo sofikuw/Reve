@@ -40,7 +40,7 @@ class ReveProvider with ChangeNotifier {
   bool _autoSortUploads = true;
   int _lastRateLimit = -1;
   String _oauthClientId = AppConfig.oauthClientId;
-  String _oauthBackend = AppConfig.oauthBackend;
+  String _oauthBackend = AppConfig.deviceFlowBackend ?? '';
 
   List<GithubAccount> get accounts => List.unmodifiable(_accounts);
   GithubAccount? get activeAccount => _activeAccount;

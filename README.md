@@ -177,11 +177,22 @@ vercel --prod
 
 Same-origin deploy: callback URL `https://<project>.vercel.app/api/oauth`.
 
+### Live broker
+
+`https://reve-oauth.sofikuw.workers.dev` (worker `reve-oauth`) is deployed and is
+the default backend baked into `index.html` and `lib/config.dart`, so neither
+client needs setup. `ALLOWED_ORIGINS` must list every origin that calls it:
+
+```bash
+npx wrangler deploy          # uses [vars] ALLOWED_ORIGINS from wrangler.toml
+npx wrangler secret put GITHUB_CLIENT_ID
+```
+
 ### Wiring the web app
 
-Account dialog → **OAuth** tab → the client ID is pre-filled; press
-*Sign in with GitHub* (needs the broker URL from **Settings**, defaulting to this
-site's origin on Vercel). Both values live in `localStorage`.
+Account dialog → **OAuth** tab → the client ID and broker URL are pre-filled;
+press *Sign in with GitHub*. Both values live in `localStorage`, so a self-hosted
+broker only needs the URL pasted in **Settings**.
 
 Verify a deployment with
 `curl https://<broker>/api/oauth?action=health` →

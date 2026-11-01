@@ -16,7 +16,9 @@ name = "reve-oauth"
 main = "src/index.js"
 compatibility_date = "2026-03-01"
 
+# Bare origins, no trailing slash. The web app is served from both URLs, so
+# both must be listed or the browser will refuse the response.
+[vars]
+ALLOWED_ORIGINS = "https://sofikuw.is-not-a.dev,https://sofikuw.github.io"
+
 # Secrets are set with `wrangler secret put`, never committed here.
-# Plain vars can go here, e.g.:
-# [vars]
-# ALLOWED_ORIGINS = "https://sofikuw.github.io"
