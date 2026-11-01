@@ -619,7 +619,7 @@ dialog.wide .dialog-card { height: 86dvh; }
         <div class="field">
           <label for="clientIdInput">GitHub OAuth App client ID</label>
           <input class="input" id="clientIdInput" placeholder="Iv1.…" autocomplete="off">
-          <div class="help">Client ID of your OAuth App (no secret is ever used by the browser). Leave empty to use the one configured for this deployment.</div>
+          <div class="help">Client ID of your OAuth App (no secret is ever used by the browser). Pre-filled with this deployment's app — clear it to disable.</div>
         </div>
         <button class="btn filled" style="width:100%;margin-bottom:10px" onclick="loginOAuth()">
           <svg class="i i-18"><use href="#i-login"/></svg> Sign in with GitHub
@@ -772,6 +772,9 @@ const S = {
 };
 
 const API = 'https://api.github.com';
+
+/* Public OAuth App client ID (not a secret). Device flow only needs this. */
+const DEFAULT_CLIENT_ID = 'Ov23liKqKI4YQP1Ie3OQ';
 
 /* ============================================================
    Small helpers
@@ -1041,7 +1044,9 @@ function backendBase() {
 }
 
 function oauthClientId() {
-  return ($('clientIdInput') && $('clientIdInput').value.trim()) || localStorage.getItem(LS.clientId) || '';
+  return ($('clientIdInput') && $('clientIdInput').value.trim())
+    || localStorage.getItem(LS.clientId)
+    || DEFAULT_CLIENT_ID;
 }
 
 let oauthPopup = null;
@@ -1293,13 +1298,13 @@ function setAuthTab(tab) {
 function openAccounts() {
   stopDeviceFlow(false);
   renderAccounts();
-  $('clientIdInput').value = localStorage.getItem(LS.clientId) || '';
+  $('clientIdInput').value = localStorage.getItem(LS.clientId) || DEFAULT_CLIENT_ID;
   openDialog('accountsDialog');
 }
 
 function openConfig() {
   $('backendInput').value = localStorage.getItem(LS.backend) || '';
-  $('defaultClientInput').value = localStorage.getItem(LS.clientId) || '';
+  $('defaultClientInput').value = localStorage.getItem(LS.clientId) || DEFAULT_CLIENT_ID;
   openDialog('configDialog');
 }
 

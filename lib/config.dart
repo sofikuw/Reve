@@ -11,8 +11,10 @@
 class AppConfig {
   const AppConfig._();
 
+  /// Public client ID of the OAuth App (safe to ship; it is not a secret).
+  /// Override at build time with `--dart-define=OAUTH_CLIENT_ID=…`.
   static const String oauthClientId =
-      String.fromEnvironment('OAUTH_CLIENT_ID', defaultValue: '');
+      String.fromEnvironment('OAUTH_CLIENT_ID', defaultValue: 'Ov23liKqKI4YQP1Ie3OQ');
 
   static const String oauthBackend =
       String.fromEnvironment('OAUTH_BACKEND', defaultValue: '');
