@@ -80,21 +80,14 @@ Paste it into the app. `reve` verifies it against `/user` and stores it locally.
 OAuth needs an OAuth App (<https://github.com/settings/developers>). The
 **client ID is public**; the **client secret never leaves your backend**.
 
-Three supported ways to obtain a token:
+Both clients use **device flow**: one button copies an 8-character code to your
+clipboard, opens <https://github.com/login/device>, and polls until you approve.
+Native builds talk to GitHub directly; browsers go through the broker because
+GitHub sends no CORS headers for `/login/device/code`.
 
-1. **Device flow** — the recommended no-secret route, available in both
-   clients. The app/web shows an 8-character code, you approve it at
-   <https://github.com/login/device>, and the client polls for the token.
-   Native builds talk to GitHub directly; browsers go through the broker
-   because GitHub sends no CORS headers for `/login/device/code`.
-2. **Popup broker** (web app) — a tiny serverless function performs the
-   `code → token` exchange and `postMessage`s the token back to the opener.
-   This is the full click-through experience.
-3. **Token paste** — paste an OAuth access token (`gho_…`) anywhere the device
-   flow is unavailable (e.g. Flutter web).
-
-> GitHub does not allow browser-side `code → token` exchange, which is exactly
-> why the broker exists. It is stateless and does not log tokens.
+> The broker still implements the authorization-code (`start` + callback)
+> endpoints for custom clients, but the bundled UI no longer needs them — device
+> flow requires no client secret.
 
 ---
 
@@ -117,7 +110,7 @@ No client secret is involved, and the client ID is stored locally after first us
 - **Android APK / desktop** — talks to `github.com` directly. Works out of the box.
 - **Web** — GitHub sends no CORS headers for `/login/device/code`, so the browser
   must proxy the two calls through the broker. Until a broker URL is set in
-  **Settings**, the web client offers a PAT or a pasted OAuth token instead.
+  **Settings**, the web client offers a personal access token instead.
 
 ### Deploy the broker (needed once for web device flow)
 
@@ -186,10 +179,9 @@ Same-origin deploy: callback URL `https://<project>.vercel.app/api/oauth`.
 
 ### Wiring the web app
 
-Account dialog → **OAuth** tab → set the **client ID**, press
-*Sign in with a device code* (needs the broker URL from **Settings**, defaulting
-to this site's origin on Vercel), or *Sign in with GitHub* for the popup flow.
-Both values live in `localStorage`.
+Account dialog → **OAuth** tab → the client ID is pre-filled; press
+*Sign in with GitHub* (needs the broker URL from **Settings**, defaulting to this
+site's origin on Vercel). Both values live in `localStorage`.
 
 Verify a deployment with
 `curl https://<broker>/api/oauth?action=health` →
@@ -215,9 +207,16 @@ Verify a deployment with
 ```bash
 flutter pub get
 flutter create --platforms=android --org com.sofikuw --project-name reve .
-flutter build apk --release --dart-define=OAUTH_CLIENT_ID=Iv1.xxxx
+# release builds need the permission the template omits:
+#   add <uses-permission android:name="android.permission.INTERNET"/>
+#   to android/app/src/main/AndroidManifest.xml
+flutter build apk --release --dart-define=OAUTH_CLIENT_ID=Ov23liKqKI4YQP1Ie3OQ
 # build/app/outputs/flutter-apk/app-release.apk
 ```
+
+> Without that permission a release APK fails with
+> `SocketException: Failed host lookup: 'github.com'`. The CI workflow adds it
+> automatically.
 
 ### Flutter web
 

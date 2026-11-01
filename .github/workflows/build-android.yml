@@ -37,6 +37,24 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --org com.sofikuw --project-name reve .
 
+      - name: Allow network access in release builds
+        # flutter create only grants INTERNET in the debug/profile manifests, so a
+        # release APK fails with "Failed host lookup: github.com".
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          if 'android.permission.INTERNET' not in s:
+              s = s.replace(
+                  '<application',
+                  '<uses-permission android:name="android.permission.INTERNET"/>\n\n    <application',
+                  1,
+              )
+              p.write_text(s)
+          print(s.split('<application')[0][-260:])
+          PY
+
       - name: Analyze (non-blocking)
         continue-on-error: true
         run: flutter analyze

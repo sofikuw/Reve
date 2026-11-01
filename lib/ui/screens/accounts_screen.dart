@@ -217,13 +217,13 @@ class _AccountsScreenState extends State<AccountsScreen> {
         FilledButton.icon(
           onPressed: _startDeviceFlow,
           icon: const Icon(Icons.login),
-          label: const Text('Sign in with GitHub device code'),
+          label: const Text('Sign in with GitHub'),
         ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: _promptOAuthToken,
-          icon: const Icon(Icons.content_paste),
-          label: const Text('Paste an OAuth access token'),
+        const SizedBox(height: 8),
+        Text(
+          'Opens github.com/login/device, copies the code to your clipboard and '
+          'waits for you to approve it.',
+          style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
         ),
       ],
     );
@@ -243,36 +243,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
       Navigator.of(context).maybePop();
     } else {
       _snack(provider.errorMessage ?? 'Could not connect');
-    }
-  }
-
-  Future<void> _promptOAuthToken() async {
-    final controller = TextEditingController();
-    final token = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('OAuth access token'),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: const InputDecoration(
-            labelText: 'gho_…',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Connect'),
-          ),
-        ],
-      ),
-    );
-    if (token != null && token.isNotEmpty) {
-      await _submitToken(token, 'oauth');
     }
   }
 
@@ -299,9 +269,17 @@ class _AccountsScreenState extends State<AccountsScreen> {
         backend: backend.isEmpty ? null : backend,
       );
     } catch (e) {
-      _snack(e.toString());
+      _snack(_friendlyError(e));
       return;
     }
+    if (!mounted) return;
+
+    // Hand the code over the way people expect: clipboard + browser.
+    await Clipboard.setData(ClipboardData(text: auth.userCode));
+    final opened = await launchUrl(
+      Uri.parse(auth.verificationUri),
+      mode: LaunchMode.externalApplication,
+    ).catchError((_) => false);
     if (!mounted) return;
 
     var cancelled = false;
@@ -355,7 +333,12 @@ class _AccountsScreenState extends State<AccountsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Open GitHub and enter this code:'),
+                  Text(
+                    opened
+                        ? 'Code copied — paste it in the GitHub tab.'
+                        : 'Code copied. Open GitHub and paste this code:',
+                    style: const TextStyle(fontSize: 13),
+                  ),
                   const SizedBox(height: 12),
                   SelectableText(
                     auth.userCode,
@@ -385,7 +368,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Waiting for authorization…',
+                    'Waiting for authorization… this closes automatically.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
@@ -430,6 +413,18 @@ class _AccountsScreenState extends State<AccountsScreen> {
       ),
     );
     if (confirmed == true) await provider.removeAccount(id);
+  }
+
+  String _friendlyError(Object error) {
+    final text = error.toString();
+    if (text.contains('Failed host lookup') || text.contains('SocketException')) {
+      return 'Cannot reach github.com. Check your connection — and if this is a '
+          'release APK, make sure the INTERNET permission is present.';
+    }
+    if (text.contains('ClientException') || text.contains('TimeoutException')) {
+      return 'Network request failed. Check your connection and try again.';
+    }
+    return text;
   }
 
   void _snack(String message) {

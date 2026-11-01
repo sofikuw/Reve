@@ -621,15 +621,15 @@ dialog.wide .dialog-card { height: 86dvh; }
           <input class="input" id="clientIdInput" placeholder="Iv1.…" autocomplete="off">
           <div class="help">Client ID of your OAuth App (no secret is ever used by the browser). Pre-filled with this deployment's app — clear it to disable.</div>
         </div>
-        <button class="btn filled" style="width:100%;margin-bottom:10px" onclick="loginOAuth()">
+        <button class="btn filled" style="width:100%;margin-bottom:8px" onclick="startDeviceFlow()">
           <svg class="i i-18"><use href="#i-login"/></svg> Sign in with GitHub
         </button>
-        <button class="btn tonal" style="width:100%;margin-bottom:10px" onclick="startDeviceFlow()">
-          <svg class="i i-18"><use href="#i-key"/></svg> Sign in with a device code
-        </button>
+        <div class="help" style="margin-bottom:12px">
+          Opens github.com/login/device, copies the code to your clipboard and waits for approval.
+        </div>
         <div id="devicePanel" class="hidden" style="margin-bottom:12px;padding:14px;border:1px solid var(--outline-variant);border-radius:14px;background:var(--surface-container-low)">
-          <p style="margin:0 0 10px;font-size:12.5px;color:var(--on-surface-variant)">
-            Open <b>github.com/login/device</b> and enter this code:
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--on-surface-variant)" id="deviceHint">
+            Paste the copied code on <b>github.com/login/device</b>:
           </p>
           <div id="deviceCode" style="font:700 26px/1.2 ui-monospace,Menlo,Consolas,monospace;letter-spacing:6px;text-align:center;padding:10px 0;user-select:all">--------</div>
           <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -643,13 +643,6 @@ dialog.wide .dialog-card { height: 86dvh; }
           </div>
           <div class="help" id="deviceStatus">Waiting for authorization…</div>
         </div>
-        <details style="margin-top:4px">
-          <summary style="cursor:pointer;font-size:12px;color:var(--on-surface-variant);margin-bottom:8px">Paste an OAuth access token instead</summary>
-          <div class="field">
-            <input class="input" id="oauthTokenInput" type="password" autocomplete="off" placeholder="gho_…">
-          </div>
-          <button class="btn tonal" style="width:100%" onclick="loginOAuthToken()">Connect OAuth token</button>
-        </details>
       </div>
     </div>
     <div class="dialog-actions">
@@ -1022,22 +1015,6 @@ async function loginPat() {
   }
 }
 
-async function loginOAuthToken() {
-  const token = $('oauthTokenInput').value.trim();
-  if (!token) return snack('Paste an OAuth access token first', true);
-  setBusy(true, 'Verifying token…');
-  try {
-    const acc = await verifyToken(token);
-    $('oauthTokenInput').value = '';
-    await addVerifiedAccount(acc, 'oauth');
-    closeDialog('accountsDialog');
-  } catch (e) {
-    snack(e.status === 401 ? 'That token was rejected by GitHub' : e.message, true);
-  } finally {
-    setBusy(false, 'Ready');
-  }
-}
-
 function backendBase() {
   const custom = (localStorage.getItem(LS.backend) || '').trim().replace(/\/+$/, '');
   return custom || location.origin;
@@ -1048,9 +1025,6 @@ function oauthClientId() {
     || localStorage.getItem(LS.clientId)
     || DEFAULT_CLIENT_ID;
 }
-
-let oauthPopup = null;
-let oauthNonce = null;
 
 /* ------------------------------------------------------------
    Device flow (OAuth public client) — proxied through the broker,
@@ -1077,6 +1051,12 @@ async function startDeviceFlow() {
   }
 
   stopDeviceFlow(false);
+
+  // Open GitHub synchronously: after an await the click gesture is gone and
+  // browsers would block the tab.
+  let ghTab = null;
+  try { ghTab = window.open('https://github.com/login/device', 'reve-device'); } catch (_) { ghTab = null; }
+
   setBusy(true, 'Requesting device code…');
   try {
     const res = await fetch(`${base}/api/oauth?action=device_start&client_id=${enc(clientId)}&scope=repo`);
@@ -1097,8 +1077,24 @@ async function startDeviceFlow() {
       active: true,
     };
     $('deviceCode').textContent = data.user_code;
-    $('deviceStatus').textContent = 'Waiting for authorization…';
     $('devicePanel').classList.remove('hidden');
+
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(data.user_code);
+      copied = true;
+    } catch (_) { copied = false; }
+
+    if (copied) {
+      $('deviceHint').innerHTML = 'Code copied — paste it on <b>github.com/login/device</b>:';
+      $('deviceStatus').textContent = ghTab
+        ? 'Waiting for authorization in the GitHub tab…'
+        : 'Waiting for authorization…';
+    } else {
+      $('deviceHint').innerHTML = 'Copy this code into <b>github.com/login/device</b>:';
+      $('deviceStatus').textContent = 'Waiting for authorization…';
+    }
+    if (!ghTab) snack('Tab blocked — use the Open GitHub button', true);
     setStatus('Waiting for GitHub authorization…');
     scheduleDevicePoll();
   } catch (e) {
@@ -1179,54 +1175,6 @@ function copyDeviceCode() {
     () => snack('Code copied'),
     () => snack('Copy failed — select the code manually', true),
   );
-}
-
-function loginOAuth() {
-  const clientId = oauthClientId();
-  if (!clientId) return snack('Add your OAuth App client ID in the field above', true);
-  localStorage.setItem(LS.clientId, clientId);
-
-  oauthNonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
-  const url = `${backendBase()}/api/oauth?action=start&client_id=${enc(clientId)}&origin=${enc(location.origin)}&nonce=${enc(oauthNonce)}`;
-  oauthPopup = window.open(url, 'reve-oauth', 'width=620,height=760,menubar=no,toolbar=no');
-  if (!oauthPopup) {
-    snack('Popup blocked — allow popups for this site, or paste an OAuth token instead', true);
-    return;
-  }
-  setStatus('Waiting for GitHub authorization…');
-  oauthPopup.focus();
-}
-
-async function onOAuthMessage(event) {
-  const data = event.data;
-  if (!data || data.type !== 'reve:oauth') return;
-  const allowed = backendBase();
-  let allowedOrigin = location.origin;
-  try { allowedOrigin = new URL(allowed).origin; } catch (_) { /* keep */ }
-  if (event.origin !== allowedOrigin && event.origin !== location.origin) return;
-  if (oauthNonce && data.state && data.state !== oauthNonce) {
-    snack('OAuth state mismatch — please retry', true);
-    return;
-  }
-  if (data.error) {
-    snack('GitHub sign-in failed: ' + data.error, true);
-    return;
-  }
-  if (!data.token) return;
-
-  setBusy(true, 'Verifying OAuth token…');
-  try {
-    const acc = await verifyToken(data.token);
-    await addVerifiedAccount(acc, 'oauth');
-    closeDialog('accountsDialog');
-  } catch (e) {
-    snack(e.message, true);
-  } finally {
-    setBusy(false, 'Ready');
-    oauthNonce = null;
-    try { oauthPopup && oauthPopup.close(); } catch (_) {}
-    oauthPopup = null;
-  }
 }
 
 function renderAccounts() {
@@ -2011,7 +1959,6 @@ document.addEventListener('keydown', (e) => {
 /* ============================================================
    Boot
    ============================================================ */
-window.addEventListener('message', onOAuthMessage);
 
 function boot() {
   S.theme = localStorage.getItem(LS.theme) || 'auto';
