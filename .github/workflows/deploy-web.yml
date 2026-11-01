@@ -1,0 +1,44 @@
+name: Build Flutter Web
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/deploy-web.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Build web
+        run: |
+          flutter build web --release \
+            --base-href "/" \
+            --dart-define=OAUTH_CLIENT_ID="${{ vars.OAUTH_CLIENT_ID }}" \
+            --dart-define=OAUTH_BACKEND="${{ vars.OAUTH_BACKEND }}"
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: reve-web
+          path: build/web
+          retention-days: 30

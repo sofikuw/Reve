@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '17'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --org com.sofikuw --project-name reve .
+
+      - name: Analyze (non-blocking)
+        continue-on-error: true
+        run: flutter analyze
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=OAUTH_CLIENT_ID="${{ vars.OAUTH_CLIENT_ID }}" \
+            --dart-define=OAUTH_SCOPE="${{ vars.OAUTH_SCOPE || 'repo' }}"
+
+      - name: Rename artifact
+        run: |
+          mkdir -p out
+          cp build/app/outputs/flutter-apk/app-release.apk "out/reve-${GITHUB_REF_NAME}.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: reve-apk
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 30

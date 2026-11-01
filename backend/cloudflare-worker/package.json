@@ -1,0 +1,15 @@
+{
+  "name": "reve-oauth",
+  "private": true,
+  "description": "Minimal Cloudflare Worker: exchanges GitHub OAuth codes for reve.",
+  "version": "1.0.0",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

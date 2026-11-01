@@ -1,0 +1,19 @@
+{
+  "name": "reve — GitHub cloud storage",
+  "short_name": "reve",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#101014",
+  "theme_color": "#5B3FD6",
+  "description": "Turn GitHub repositories into personal cloud storage.",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

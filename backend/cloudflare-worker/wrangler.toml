@@ -1,0 +1,20 @@
+# Cloudflare Worker deployment for the reve OAuth broker.
+#
+#   npm i -g wrangler
+#   wrangler login
+#   wrangler secret put GITHUB_CLIENT_ID
+#   wrangler secret put GITHUB_CLIENT_SECRET
+#   wrangler secret put ALLOWED_ORIGINS   # optional: https://you.github.io
+#   wrangler deploy
+#
+# Then register https://<name>.<subdomain>.workers.dev/api/oauth
+# as the OAuth App callback URL on github.com/settings/developers.
+
+name = "reve-oauth"
+main = "src/index.js"
+compatibility_date = "2026-03-01"
+
+# Secrets are set with `wrangler secret put`, never committed here.
+# Plain vars can go here, e.g.:
+# [vars]
+# ALLOWED_ORIGINS = "https://sofikuw.github.io"
