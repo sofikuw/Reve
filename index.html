@@ -1075,9 +1075,13 @@ async function startDeviceFlow() {
   setBusy(true, 'Requesting device code…');
   try {
     const res = await fetch(`${base}/api/oauth?action=device_start&client_id=${enc(clientId)}&scope=repo`);
+    const isJson = (res.headers.get('content-type') || '').includes('json');
+    if (!isJson) {
+      throw new Error(`No OAuth broker at ${base}. Deploy api/oauth.js (Vercel) or the Cloudflare Worker, then paste its URL in Settings.`);
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
-      throw new Error(data.error || `Broker returned ${res.status}. Is api/oauth.js deployed?`);
+      throw new Error(data.error || `Broker returned ${res.status}.`);
     }
 
     deviceFlow = {
@@ -1113,6 +1117,12 @@ async function pollDeviceFlow() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: clientId, device_code: deviceCode }),
     });
+    const isJson = (res.headers.get('content-type') || '').includes('json');
+    if (!isJson) {
+      const base = backendBase();
+      stopDeviceFlow(false);
+      return snack(`Broker disappeared at ${base} — check the URL in Settings`, true);
+    }
     const data = await res.json().catch(() => ({}));
     if (!deviceFlow) return;
 

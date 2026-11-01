@@ -47,7 +47,8 @@ Two clients ship in this repo:
 
 1. Push this repo to GitHub.
 2. **Settings → Pages → Source: Deploy from a branch → `main` / `/ (root)`**.
-3. Visit `https://<user>.github.io/reve/`.
+3. Visit `https://<user>.github.io/reve/` (this repo already serves
+   `https://sofikuw.is-not-a.dev/Reve/`).
 
 `.nojekyll` is already present so no files get filtered.
 
@@ -101,8 +102,8 @@ a one-time click in the web UI. The PAT cannot do it.
 
 1. Open <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**.
    - *Application name*: `reve`
-   - *Homepage URL*: your deployment, e.g. `https://sofikuw.github.io/Reve/`
-   - *Authorization callback URL*: `https://sofikuw.github.io/Reve/`
+   - *Homepage URL*: your deployment, e.g. `https://sofikuw.is-not-a.dev/Reve/`
+   - *Authorization callback URL*: `https://sofikuw.is-not-a.dev/Reve/`
      (only used by the popup flow; device flow ignores it)
 2. Open the new app → tick **Enable Device Flow** → **Update application**.
 3. Copy the **Client ID** (`Iv1.…` or `Ov23li…`).
