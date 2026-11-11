@@ -37,6 +37,14 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --org com.sofikuw --project-name reve .
 
+      - name: Install app icons
+        run: |
+          for d in assets/android/mipmap-*; do
+            cp "$d/ic_launcher.png" "android/app/src/main/res/$(basename "$d")/ic_launcher.png"
+          done
+          # the adaptive-icon XML points at the Flutter logo; the PNG set wins
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+
       - name: Allow network access in release builds
         # flutter create only grants INTERNET in the debug/profile manifests, so a
         # release APK fails with "Failed host lookup: github.com".

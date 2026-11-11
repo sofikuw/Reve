@@ -6,7 +6,7 @@
 <title>reve — GitHub as cloud storage</title>
 <meta name="description" content="Turn your GitHub repositories into personal cloud storage. Multi-account PAT and OAuth login, MiXplorer-style file manager, Material 3 design.">
 <meta name="theme-color" content="#101014">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b9a1ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect width='1024' height='1024' rx='225' fill='%23F6F3EE'/%3E%3Cpath fill='%23202836' d='M318 940 L640 394 H782 C846 398 900 388 968 391 L942 524 C874 530 812 548 784 574 V940 Z'/%3E%3C/svg%3E">
 <style>
 /* ============================================================
    Material 3 (Material You) design tokens
@@ -130,7 +130,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 a { color: var(--primary); }
-.i { width: 20px; height: 20px; flex: 0 0 auto; display: inline-block; vertical-align: middle; }
+.i { width: 20px; height: 20px; flex: 0 0 auto; display: inline-block; vertical-align: middle;
+     fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.i-logo { stroke: none; }
 .i-16 { width: 16px; height: 16px; }
 .i-18 { width: 18px; height: 18px; }
 .i-24 { width: 24px; height: 24px; }
@@ -200,7 +202,8 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; min-height:
   z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; letter-spacing: -.02em; }
-.brand .logo { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--primary-container); color: var(--on-primary-container); }
+.brand .logo { width: 32px; height: 32px; display: grid; place-items: center; }
+.brand .logo .i { width: 32px; height: 32px; }
 .app-bar .spacer { flex: 1 1 auto; }
 .account-chip {
   display: flex; align-items: center; gap: 8px;
@@ -359,6 +362,18 @@ dialog[open] { animation: pop .16s ease-out; }
 /* preview dialog wide */
 dialog.wide { max-width: min(96vw, 1080px); }
 dialog.wide .dialog-card { height: 86dvh; }
+.thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-tile { padding: 0 !important; overflow: hidden; background: var(--surface-container-high); }
+.pv-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 14px 10px; }
+.pv-toolbar .sep { flex: 1 1 auto; }
+.pv-counter, .pv-meta { font-size: 11.5px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.pv-stage { width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; touch-action: none; cursor: grab; }
+.pv-stage.zoomable { cursor: grab; }
+.pv-stage.dragging { cursor: grabbing; }
+.pv-stage img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; will-change: transform; }
+.pv-stage.dark { background: #000; }
+.preview-body pre { white-space: pre; }
+.preview-body pre.wrap { white-space: pre-wrap; word-break: break-word; }
 .preview-body { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; background: var(--surface-container-lowest); overflow: auto; min-height: 0; }
 .preview-body img, .preview-body video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 .preview-body audio { width: min(560px, 90%); }
@@ -448,6 +463,10 @@ dialog.wide .dialog-card { height: 86dvh; }
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <symbol id="i-logo" viewBox="0 0 1024 1024">
+      <rect width="1024" height="1024" rx="225" fill="#F6F3EE"/>
+      <path fill="#202836" d="M318 940 L640 394 H782 C846 398 900 388 968 391 L942 524 C874 530 812 548 784 574 V940 Z"/>
+    </symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
@@ -470,6 +489,7 @@ dialog.wide .dialog-card { height: 86dvh; }
     <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></symbol>
     <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></symbol>
     <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
@@ -500,7 +520,7 @@ dialog.wide .dialog-card { height: 86dvh; }
       <svg class="i"><use href="#i-menu"/></svg>
     </button>
     <div class="brand">
-      <span class="logo"><svg class="i i-18"><use href="#i-cloud"/></svg></span>
+      <span class="logo"><svg class="i i-24"><use href="#i-logo"/></svg></span>
       <span>reve</span>
     </div>
     <div class="spacer"></div>
@@ -727,6 +747,20 @@ dialog.wide .dialog-card { height: 86dvh; }
       </a>
       <button class="icon-btn" onclick="closePreview()" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
+    <div class="pv-toolbar">
+      <button class="icon-btn" id="pvPrev" onclick="stepPreview(-1)" aria-label="Previous file" title="Previous (←)"><svg class="i i-18"><use href="#i-chevron-left"/></svg></button>
+      <button class="icon-btn" id="pvNext" onclick="stepPreview(1)" aria-label="Next file" title="Next (→)"><svg class="i i-18"><use href="#i-chevron-right"/></svg></button>
+      <span class="pv-counter" id="pvCounter"></span>
+      <span class="sep"></span>
+      <button class="icon-btn" id="pvZoomOut" onclick="zoomBy(0.8)" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button class="icon-btn" id="pvZoomIn" onclick="zoomBy(1.25)" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      <button class="icon-btn" id="pvReset" onclick="resetView()" aria-label="Reset view" title="Reset (0)"><svg class="i i-18"><use href="#i-refresh"/></svg></button>
+      <button class="icon-btn" id="pvRotate" onclick="rotateView()" aria-label="Rotate" title="Rotate (r)">⟳</button>
+      <button class="icon-btn hidden" id="pvWrap" onclick="toggleWrap()" aria-label="Toggle wrapping" title="Wrap lines"><svg class="i i-18"><use href="#i-menu"/></svg></button>
+      <button class="icon-btn hidden" id="pvCopy" onclick="copyPreviewPath()" aria-label="Copy path" title="Copy path"><svg class="i i-18"><use href="#i-copy"/></svg></button>
+      <a class="icon-btn" id="pvOpen" target="_blank" rel="noopener" aria-label="Open on GitHub" title="Open on GitHub"><svg class="i i-18"><use href="#i-external"/></svg></a>
+      <span class="pv-meta" id="pvInfo"></span>
+    </div>
     <div class="preview-body" id="previewBody"></div>
   </div>
 </dialog>
@@ -756,12 +790,17 @@ const S = {
   branches: [],
   branch: null,
   path: '',
+  bootPath: null,     // #/folder from the URL, consumed once a repo loads
   entries: [],
   view: 'list',
   autoSort: true,
   theme: 'auto',
   busy: false,
   rate: null,
+  cache: new Map(),   // "branch|path" -> { entries, at }  (instant back/forward)
+  req: new Map(),     // in-flight listing requests, deduped
+  scroll: new Map(),  // "branch|path" -> scrollTop
+  text: new Map(),    // "branch|path" -> file text for the preview
 };
 
 const API = 'https://api.github.com';
@@ -1228,7 +1267,8 @@ async function removeAccount(id) {
 }
 
 async function onAccountChanged() {
-  S.repo = null; S.branch = null; S.branches = []; S.path = ''; S.entries = []; S.repos = [];
+  resetCaches();
+  S.repo = null; S.branch = null; S.branches = []; S.path = S.bootPath ?? ''; S.entries = []; S.repos = [];
   if (!activeAccount()) {
     renderRepos();
     renderEntries();
@@ -1328,7 +1368,15 @@ function selectRepoById(id) {
   if (repo) selectRepo(repo);
 }
 
+function resetCaches() {
+  S.cache.clear();
+  S.req.clear();
+  S.text.clear();
+  S.scroll.clear();
+}
+
 async function selectRepo(repo) {
+  resetCaches();
   S.repo = repo;
   S.branch = repo.default_branch || null;
   S.path = '';
@@ -1346,7 +1394,8 @@ async function loadBranches(keepPath) {
     const branches = await api(`/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/branches?per_page=100`);
     S.branches = branches.map((b) => b.name);
     if (!S.branches.includes(S.branch)) S.branch = S.repo.default_branch || S.branches[0] || null;
-    if (!keepPath) S.path = '';
+    if (!keepPath) S.path = S.bootPath ?? '';
+    S.bootPath = null;
     await loadEntries();
   } catch (e) {
     setStatus('Failed to load branches', 'err');
@@ -1363,29 +1412,75 @@ async function setBranch(name) {
 /* ============================================================
    Browse / render
    ============================================================ */
-async function loadEntries() {
+function entryOrder(a, b) {
+  if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+  return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function entrySig(list) {
+  return list.map((e) => `${e.type}:${e.path}:${e.sha || e.size || ''}`).join('|');
+}
+
+function describeEntries(list) {
+  const n = list.length;
+  return `${n} item${n === 1 ? '' : 's'} · ${S.repo.full_name}${S.branch ? ' · ' + S.branch : ''}`;
+}
+
+/* One request per folder at a time, shared by navigation and prefetch. */
+function fetchEntries(path) {
+  const key = navKey(path);
+  const pending = S.req.get(key);
+  if (pending) return pending;
+  const base = `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}`;
+  const q = S.branch ? `?ref=${enc(S.branch)}` : '';
+  const request = api(base + q).then((data) => {
+    const list = Array.isArray(data) ? data : [data];
+    return list.sort(entryOrder);
+  });
+  S.req.set(key, request);
+  request.then(() => S.req.delete(key), () => S.req.delete(key));
+  return request;
+}
+
+async function loadEntries(opts = {}) {
   if (!S.repo || !activeAccount()) { renderEntries(); return; }
-  setBusy(true, 'Loading files…');
-  try {
-    const base = `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(S.path)}`;
-    const q = S.branch ? `?ref=${enc(S.branch)}` : '';
-    let data = await api(base + q);
-    if (!Array.isArray(data)) data = [data];
-    S.entries = data.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
-      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    });
+  const path = S.path;
+  const key = navKey(path);
+  const hit = S.cache.get(key);
+
+  if (hit) {
+    S.entries = hit.entries;
     renderCrumbs();
-    renderEntries();
-    setStatus(`${S.entries.length} item${S.entries.length === 1 ? '' : 's'} · ${S.repo.full_name} · ${S.branch || ''}`, 'ok');
+    renderEntries({ scroll: S.scroll.get(key) || 0 });
+    setStatus(describeEntries(S.entries), 'ok');
+  } else if (!opts.keep) {
+    renderEntries({ skeleton: true });
+    setBusy(true, 'Loading files…');
+  }
+
+  try {
+    const list = await fetchEntries(path);
+    if (path !== S.path) return; // user moved on; discard this answer
+    const before = hit ? entrySig(hit.entries) : '';
+    S.cache.set(key, { entries: list, at: Date.now() });
+    S.entries = list;
+    if (!hit || entrySig(list) !== before) {
+      renderCrumbs();
+      renderEntries({ scroll: S.scroll.get(key) || 0 });
+      setStatus(describeEntries(list), 'ok');
+    }
   } catch (e) {
+    if (path !== S.path) return;
     if (e.status === 404) {
       S.entries = [];
+      S.cache.set(key, { entries: [], at: Date.now() });
       renderEntries();
       setStatus('Empty repository', 'ok');
-    } else {
+    } else if (!hit) {
       setStatus('Failed to load contents', 'err');
       snack(e.message, true);
+    } else {
+      setStatus('Showing cached files — refresh failed', 'err');
     }
   } finally {
     setBusy(false);
@@ -1420,13 +1515,15 @@ function renderCrumbs() {
   el.scrollLeft = el.scrollWidth;
 }
 
-function renderEntries(skeleton = false) {
+function renderEntries(opts = {}) {
+  const skeleton = opts.skeleton === true;
   const area = $('fileArea');
+  const restoreScroll = () => { area.scrollTop = opts.scroll || 0; };
 
   if (!activeAccount()) {
     area.innerHTML = `
       <div class="empty-state">
-        <div class="big">${icon('cloud', 'i-40')}</div>
+        <div class="big">${icon('logo', 'i-64')}</div>
         <h3>Turn GitHub into your drive</h3>
         <p>Connect one or more GitHub accounts with a personal access token or OAuth, pick a repository, and start uploading. Nothing passes through a third-party server.</p>
         <button class="btn filled" style="margin-top:8px" onclick="openAccounts()">${icon('login', 'i-18')} Connect GitHub account</button>
@@ -1472,12 +1569,14 @@ function renderEntries(skeleton = false) {
 
   if (S.view === 'grid') {
     area.innerHTML = `<div class="grid">${S.entries.map(gridCard).join('')}</div>`;
+    restoreScroll();
   } else {
     area.innerHTML = `
       <div class="list">
         <div class="row head"><span>Name</span><span>Size</span><span>Type</span><span style="text-align:right">Actions</span></div>
         ${S.entries.map(listRow).join('')}
       </div>`;
+    restoreScroll();
   }
 }
 
@@ -1488,7 +1587,7 @@ function listRow(e) {
   const sub = isDir ? 'Folder' : (kind === 'file' ? extOf(e.name).toUpperCase() || 'File' : kind.toUpperCase());
   return `
     <div class="row" data-path="${esc(e.path)}">
-      <div class="name" onclick="activate('${esc(e.path).replace(/'/g, "\\'")}', ${isDir})" style="cursor:pointer">
+      <div class="name"${isDir ? ` onpointerenter="prefetchFolder('${esc(e.path).replace(/'/g, "\\'")}')"` : ''} onclick="activate('${esc(e.path).replace(/'/g, "\\'")}', ${isDir})" style="cursor:pointer">
         <span class="tile-icon ${cls}">${icon(KIND_ICON[kind])}</span>
         <span class="label"><b>${esc(e.name)}</b><small>${esc(e.path)}</small></span>
       </div>
@@ -1502,13 +1601,21 @@ function listRow(e) {
     </div>`;
 }
 
+function thumbTile(e, kind, cls) {
+  if (kind !== 'image') return `<span class="tile-icon ${cls}">${icon(KIND_ICON[kind])}</span>`;
+  return `<span class="tile-icon ${cls} thumb-tile">
+      <img class="thumb" loading="lazy" decoding="async" alt="" src="${esc(rawUrl(e.path))}" onerror="this.remove()">
+    </span>`;
+}
+
 function gridCard(e) {
   const isDir = e.type === 'dir';
   const kind = kindOf(e.name, isDir);
   const cls = KIND_CLASS[kind] || '';
+  const hover = isDir ? ` onpointerenter="prefetchFolder('${esc(e.path).replace(/'/g, "\\'")}')"` : '';
   return `
-    <div class="card" onclick="activate('${esc(e.path).replace(/'/g, "\\'")}', ${isDir})">
-      <span class="tile-icon ${cls}">${icon(KIND_ICON[kind])}</span>
+    <div class="card"${hover} onclick="activate('${esc(e.path).replace(/'/g, "\\'")}', ${isDir})">
+      ${thumbTile(e, kind, cls)}
       <b>${esc(e.name)}</b>
       <small>${isDir ? 'Folder' : fmtSize(e.size)}</small>
       <button class="icon-btn card-menu" title="More" onclick="event.stopPropagation();entryMenu('${esc(e.path).replace(/'/g, "\\'")}', ${isDir}, '${esc(e.name).replace(/'/g, "\\'")}', event)">${icon('more', 'i-16')}</button>
@@ -1520,8 +1627,25 @@ function activate(path, isDir) {
   else preview(path, path.split('/').pop());
 }
 
-function navigate(path) {
-  S.path = path || '';
+function navKey(path = S.path) {
+  return `${S.branch || ''}|${path}`;
+}
+
+function hashPath() {
+  const h = location.hash || '';
+  if (!h.startsWith('#/')) return null;
+  try { return decodeURI(h.slice(2)); } catch (_) { return h.slice(2); }
+}
+
+function navigate(path, opts = {}) {
+  const next = path || '';
+  if (next === S.path && !opts.force) return;
+  S.scroll.set(navKey(), $('fileArea').scrollTop || 0);
+  S.path = next;
+  if (opts.push !== false) {
+    const url = next ? `#/${encodePath(next)}` : '#';
+    try { history.pushState({ path: next }, '', url); } catch (_) {}
+  }
   loadEntries();
 }
 
@@ -1530,6 +1654,25 @@ function goUp() {
   const parts = S.path.split('/');
   parts.pop();
   navigate(parts.join('/'));
+}
+
+/* Cache bookkeeping: an upload/delete/rename invalidates the folder it touched
+   plus every parent listing, so a stale page can never be shown twice. */
+function invalidate(path) {
+  for (const key of [...S.cache.keys()]) {
+    const p = key.slice(key.indexOf('|') + 1);
+    const touches = path === undefined || p === '' || p === path ||
+      p.startsWith(path ? path + '/' : '/') || path.startsWith(p + '/');
+    if (touches) S.cache.delete(key);
+  }
+}
+
+/* Hover a folder and its listing is already in memory when you click. */
+function prefetchFolder(path) {
+  if (!S.repo || !activeAccount()) return;
+  const key = navKey(path);
+  if (S.cache.has(key) || S.req.has(key) || S.req.size > 2) return;
+  fetchEntries(path).catch(() => {});
 }
 
 /* ============================================================
@@ -1597,7 +1740,8 @@ async function handleFiles(fileList) {
     }
   }
   setBusy(false);
-  await loadEntries();
+  invalidate(S.path);
+  await loadEntries({ keep: true });
   if (errors.length) {
     setStatus(`${ok} uploaded, ${errors.length} failed`, 'err');
     snack(errors[0] + (errors.length > 1 ? ` (+${errors.length - 1} more)` : ''), true);
@@ -1693,7 +1837,8 @@ function openNewFolder() {
       };
       if (S.branch) body.branch = S.branch;
       await api(`/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}`, { method: 'PUT', body });
-      await loadEntries();
+      invalidate(S.path);
+      await loadEntries({ keep: true });
       snack(`Folder “${clean}” created`);
     } finally {
       setBusy(false);
@@ -1780,7 +1925,8 @@ async function deleteEntry(path, name, isDir) {
   setBusy(true, 'Deleting…');
   try {
     await deletePath(path);
-    await loadEntries();
+    invalidate(S.path);
+    await loadEntries({ keep: true });
     snack(`Deleted “${name}”`);
   } catch (e) {
     snack(e.message, true);
@@ -1829,7 +1975,8 @@ async function renameEntry(path, name) {
     if (S.branch) body.branch = S.branch;
     await api(`/repos/${owner}/${repo}/contents/${encodePath(target)}`, { method: 'PUT', body });
     await deletePath(path);
-    await loadEntries();
+    invalidate(S.path);
+    await loadEntries({ keep: true });
     snack(`Renamed to “${newName}”`);
   } catch (e) {
     snack(e.message, true);
@@ -1856,45 +2003,192 @@ function downloadEntry(path) {
   a.remove();
 }
 
-async function preview(path, name) {
+const PV = { items: [], index: 0, zoom: 1, rot: 0, panX: 0, panY: 0, wrap: false };
+
+function githubBlobUrl(path) {
+  const ref = S.branch || S.repo.default_branch;
+  return `https://github.com/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/blob/${enc(ref)}/${encodePath(path)}`;
+}
+
+function currentPreview() {
+  return PV.items[PV.index] || null;
+}
+
+async function textOf(path) {
+  const key = navKey(path);
+  if (S.text.has(key)) return S.text.get(key);
+  const text = await api(
+    `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}${S.branch ? `?ref=${enc(S.branch)}` : ''}`,
+    { raw: true },
+  );
+  S.text.set(key, text);
+  return text;
+}
+
+/* Opens the preview over a gallery of the files in the current folder, so
+   ←/→ walks the folder instead of closing and reopening. */
+function preview(path, name) {
+  const siblings = S.entries.filter((e) => e.type !== 'dir');
+  const found = siblings.findIndex((e) => e.path === path);
+  PV.items = found >= 0 ? siblings : [{ path, name, type: 'file' }];
+  PV.index = found >= 0 ? found : 0;
+  PV.wrap = false;
+  resetView(false);
+  openDialog('previewDialog');
+  loadPreview();
+}
+
+function loadPreview() {
+  const item = currentPreview();
+  if (!item) return;
+  const name = item.name || item.path.split('/').pop();
   const kind = kindOf(name, false);
+  const url = rawUrl(item.path);
   const body = $('previewBody');
-  const url = rawUrl(path);
+  const many = PV.items.length > 1;
+  const isImage = kind === 'image';
+  const isPdf = extOf(name) === 'pdf';
+  const isMedia = kind === 'video' || kind === 'audio';
+  const isText = !isImage && !isPdf && !isMedia;
+
   $('previewTitle').textContent = name;
+  $('pvCounter').textContent = many ? `${PV.index + 1} / ${PV.items.length}` : '';
+  $('pvPrev').classList.toggle('hidden', !many);
+  $('pvNext').classList.toggle('hidden', !many);
+  $('pvInfo').textContent = [
+    item.size !== undefined ? fmtSize(item.size) : '',
+    isImage || isMedia ? extOf(name).toUpperCase() : kind,
+    item.sha ? item.sha.slice(0, 7) : '',
+  ].filter(Boolean).join(' · ');
+  $('pvOpen').href = githubBlobUrl(item.path);
+  ['pvZoomIn', 'pvZoomOut', 'pvReset', 'pvRotate'].forEach((id) => $(id).classList.toggle('hidden', !isImage));
+  $('pvWrap').classList.toggle('hidden', !isText || /\.(md|markdown)$/i.test(name));
+
   const dl = $('previewDownload');
   dl.href = url;
   dl.setAttribute('download', name);
-  body.innerHTML = `<div class="skeleton" style="width:60%;height:60%"></div>`;
-  openDialog('previewDialog');
 
+  body.innerHTML = isImage
+    ? `<div class="pv-stage" id="pvStage"><img id="pvImg" alt="${esc(name)}" src="${esc(url)}"></div>`
+    : kind === 'video'
+      ? `<video controls autoplay playsinline src="${esc(url)}"></video>`
+      : kind === 'audio'
+        ? `<audio controls autoplay src="${esc(url)}"></audio>`
+        : isPdf
+          ? `<iframe title="${esc(name)}" src="${esc(url)}"></iframe>`
+          : `<pre id="pvText" class="${PV.wrap ? 'wrap' : ''}">Loading…</pre>`;
+
+  if (isImage) {
+    bindStage();
+    applyView();
+  } else if (isText) {
+    loadText(item, name);
+  }
+}
+
+async function loadText(item, name) {
+  const pre = $('pvText');
+  if (!pre) return;
   try {
-    if (kind === 'image') {
-      body.innerHTML = `<img alt="${esc(name)}" src="${esc(url)}">`;
-    } else if (kind === 'video') {
-      body.innerHTML = `<video controls autoplay src="${esc(url)}"></video>`;
-    } else if (kind === 'audio') {
-      body.innerHTML = `<audio controls autoplay src="${esc(url)}"></audio>`;
-    } else if (extOf(name) === 'pdf') {
-      body.innerHTML = `<iframe title="${esc(name)}" src="${esc(url)}"></iframe>`;
+    const text = await textOf(item.path);
+    if (currentPreview()?.path !== item.path || !$('pvText')) return;
+    if (/\.(md|markdown)$/i.test(name)) {
+      const md = document.createElement('div');
+      md.className = 'md';
+      md.style.cssText = 'width:100%;height:100%;overflow:auto;padding:18px 22px';
+      md.innerHTML = renderMarkdown(text);
+      $('pvText').replaceWith(md);
     } else {
-      const text = await api(`/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}${S.branch ? `?ref=${enc(S.branch)}` : ''}`, { raw: true });
-      if (/\.(md|markdown)$/i.test(name)) {
-        body.innerHTML = `<div class="md">${renderMarkdown(text)}</div>`;
-      } else if (kind === 'code' || kind === 'doc' || text.length < 400000) {
-        body.innerHTML = `<pre>${esc(text.slice(0, 500000))}</pre>`;
-      } else {
-        body.innerHTML = `<div class="empty-state"><div class="big">${icon('file', 'i-40')}</div><h3>No inline preview</h3><p>This file is too large or binary. Use Download to save it.</p></div>`;
-      }
+      $('pvText').textContent = text.length > 400000 ? text.slice(0, 400000) + '\n\n… truncated' : text;
     }
   } catch (e) {
-    body.innerHTML = `<div class="empty-state"><div class="big">${icon('alert', 'i-40')}</div><h3>Preview failed</h3><p>${esc(e.message)}</p></div>`;
+    const el = $('pvText');
+    if (el) el.textContent = `Could not read this file: ${e.message}`;
   }
+}
+
+function applyView() {
+  const img = $('pvImg');
+  if (!img) return;
+  img.style.transform = `translate(${PV.panX}px, ${PV.panY}px) scale(${PV.zoom}) rotate(${PV.rot}deg)`;
+}
+
+function zoomBy(factor) {
+  if (!$('pvImg')) return;
+  PV.zoom = Math.min(12, Math.max(0.2, PV.zoom * factor));
+  if (PV.zoom <= 1) { PV.panX = 0; PV.panY = 0; }
+  applyView();
+}
+
+function rotateView() {
+  if (!$('pvImg')) return;
+  PV.rot = (PV.rot + 90) % 360;
+  applyView();
+}
+
+function resetView(apply = true) {
+  PV.zoom = 1;
+  PV.rot = 0;
+  PV.panX = 0;
+  PV.panY = 0;
+  if (apply) applyView();
+}
+
+function toggleWrap() {
+  PV.wrap = !PV.wrap;
+  $('pvText')?.classList.toggle('wrap', PV.wrap);
+}
+
+function copyPreviewPath() {
+  const item = currentPreview();
+  if (!item) return;
+  navigator.clipboard?.writeText(item.path);
+  snack(`Copied ${item.path}`);
+}
+
+function stepPreview(delta) {
+  if (PV.items.length < 2) return;
+  PV.index = (PV.index + delta + PV.items.length) % PV.items.length;
+  PV.wrap = false;
+  resetView(false);
+  loadPreview();
+}
+
+function bindStage() {
+  const stage = $('pvStage');
+  if (!stage) return;
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1.15 : 0.87);
+  }, { passive: false });
+  stage.addEventListener('dblclick', () => {
+    if (PV.zoom > 1) resetView(); else { PV.zoom = 2.4; applyView(); }
+  });
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (PV.zoom <= 1) return;
+    drag = { x: e.clientX, y: e.clientY, px: PV.panX, py: PV.panY };
+    stage.setPointerCapture(e.pointerId);
+    stage.classList.add('dragging');
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    PV.panX = drag.px + (e.clientX - drag.x);
+    PV.panY = drag.py + (e.clientY - drag.y);
+    applyView();
+  });
+  const stop = () => { drag = null; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', stop);
+  stage.addEventListener('pointercancel', stop);
 }
 
 function closePreview() {
   const body = $('previewBody');
   body.querySelectorAll('video, audio').forEach((m) => { try { m.pause(); } catch (_) {} });
   body.innerHTML = '';
+  PV.items = [];
+  PV.index = 0;
+  resetView(false);
   closeDialog('previewDialog');
 }
 
@@ -1946,6 +2240,14 @@ document.querySelectorAll('dialog').forEach((d) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeMenu();
+  if ($('previewDialog').open && !/input|textarea/i.test(document.activeElement.tagName)) {
+    if (e.key === 'ArrowRight') { e.preventDefault(); stepPreview(1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); stepPreview(-1); }
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomBy(1.25); }
+    if (e.key === '-') { e.preventDefault(); zoomBy(0.8); }
+    if (e.key === '0') { e.preventDefault(); resetView(); }
+    if (e.key.toLowerCase() === 'r') { e.preventDefault(); rotateView(); }
+  }
   if (e.key === '/' && !/input|textarea/i.test(document.activeElement.tagName)) {
     e.preventDefault();
     $('repoFilter').focus();
@@ -1972,9 +2274,21 @@ function boot() {
   $('viewBtn').innerHTML = icon(S.view === 'list' ? 'grid' : 'list');
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'auto') applyTheme(); });
 
+  // A #/folder link is resolved once the first repo+listing loads, so opening
+  // a shared link goes straight there instead of flashing the repo root.
+  S.bootPath = hashPath();
+  S.path = S.bootPath ?? '';
+
   loadAccounts();
   paintAccountChip();
   renderRepos();
+
+  window.addEventListener('popstate', () => {
+    const path = hashPath() ?? '';
+    if (path === S.path) return;
+    S.path = path;
+    loadEntries();
+  });
 
   if (activeAccount()) {
     onAccountChanged();

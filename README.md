@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/icon-192.png" width="104" height="104" alt="reve logo"></p>
+
 # reve
 
 **Turn GitHub repositories into personal cloud storage.**
@@ -23,8 +25,12 @@ Two clients ship in this repo:
   Personal access tokens *and* OAuth (popup broker or device flow).
 - **Smart auto-sorting uploads** — files are filed into `images/`, `documents/`,
   `media/`, `archives/`, `code/`, `others/` based on extension (toggleable).
-- **Rich previews** — images, video, audio, PDF, Markdown and source code
-  without an extra download.
+- **Fast folder navigation** — listings are cached per branch+path, in-flight
+  requests are de-duped, folders are prefetched on hover and the browser
+  back/forward buttons (and a shareable `#/folder` URL) work without refetching.
+- **Rich previews** — gallery with ←/→ through the folder, pinch/wheel zoom,
+  drag-pan, rotate, Markdown and wrapped-source reading, copy path, open on
+  GitHub — for images, video, audio, PDF and text, without an extra download.
 - **Repository management** — create public/private repos with `auto_init`,
   switch branches, follow the default branch automatically.
 - **Full file operations** — upload (multi-file + drag and drop), download,
@@ -34,6 +40,13 @@ Two clients ship in this repo:
 - **Honest limits** — GitHub's Contents API caps a single file at 100 MB;
   `reve` warns at 95 MB before wasting an upload.
 - **Material 3** — light/dark/auto themes, responsive layout, keyboard friendly.
+
+### Brand assets
+
+The logo lives in [`assets/`](assets): `logo.svg`/`mark.svg` (vector),
+`icon-192.png`/`icon-512.png` (app + README), `icon.png` (1024 store art) and
+`assets/android/mipmap-*/ic_launcher.png` (launcher icons, installed by the
+Android workflow right after `flutter create`).
 
 ---
 
@@ -218,6 +231,8 @@ Verify a deployment with
 ```bash
 flutter pub get
 flutter create --platforms=android --org com.sofikuw --project-name reve .
+# swap the Flutter launcher logo for reve's:
+for d in assets/android/mipmap-*; do cp "$d/ic_launcher.png" "android/app/src/main/res/$(basename "$d")/"; done
 # release builds need the permission the template omits:
 #   add <uses-permission android:name="android.permission.INTERNET"/>
 #   to android/app/src/main/AndroidManifest.xml

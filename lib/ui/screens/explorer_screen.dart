@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/file_item.dart';
 import '../../providers/reve_provider.dart';
 import 'accounts_screen.dart';
+import 'preview_screen.dart';
 
 class ExplorerScreen extends StatefulWidget {
   const ExplorerScreen({super.key});
@@ -31,14 +32,9 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         titleSpacing: 16,
         title: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Icon(Icons.cloud_outlined, size: 20, color: cs.onPrimaryContainer),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset('assets/icon-192.png', width: 32, height: 32, filterQuality: FilterQuality.medium),
             ),
             const SizedBox(width: 10),
             const Text('reve', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
@@ -264,6 +260,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         itemCount: provider.files.length,
         itemBuilder: (context, index) => _GridCard(
           item: provider.files[index],
+          url: provider.downloadUrlFor(provider.files[index]),
           onTap: () => _activate(provider, provider.files[index]),
           onLongPress: () => _showItemSheet(provider, provider.files[index]),
         ),
@@ -405,77 +402,18 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
   Future<void> _preview(GithubFileItem item) async {
     final provider = _provider;
-    final kind = _kindOf(item);
-    final url = provider.downloadUrlFor(item);
-
-    if (kind == 'image' && url != null) {
-      await showDialog<void>(
-        context: context,
-        builder: (context) => Dialog(
-          clipBehavior: Clip.antiAlias,
-          child: InteractiveViewer(
-            maxScale: 5,
-            child: Image.network(
-              url,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stack) => const Padding(
-                padding: EdgeInsets.all(28),
-                child: Text('Could not load this image.'),
-              ),
-            ),
-          ),
+    final siblings = provider.files.where((f) => !f.isDirectory).toList();
+    final index = siblings.indexWhere((f) => f.path == item.path);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PreviewScreen(
+          provider: provider,
+          items: siblings.isEmpty ? [item] : siblings,
+          initialIndex: index < 0 ? 0 : index,
         ),
-      );
-      return;
-    }
-
-    if (kind == 'doc' || kind == 'code' || kind == 'file') {
-      try {
-        final text = await provider.readText(item);
-        if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (context) => Dialog(
-            clipBehavior: Clip.antiAlias,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760, maxHeight: 620),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: SelectableText(
-                          text.length > 200000 ? text.substring(0, 200000) : text,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5, height: 1.55),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      } catch (e) {
-        _snack(e.toString());
-      }
-      return;
-    }
-
-    if (url != null) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    }
+      ),
+    );
   }
 
   Future<void> _delete(ReveProvider provider, GithubFileItem item) async {
@@ -686,10 +624,44 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
 class _GridCard extends StatelessWidget {
   final GithubFileItem item;
+  final String? url;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
-  const _GridCard({required this.item, required this.onTap, required this.onLongPress});
+  const _GridCard({required this.item, this.url, required this.onTap, required this.onLongPress});
+
+  /// Images get a real thumbnail; everything else keeps a glyph so a folder
+  /// full of videos does not pull hundreds of megabytes.
+  Widget _thumb(BuildContext context, ColorScheme cs, bool isDir) {
+    final isImage = !isDir && _isImage(item.name);
+    if (!isImage || url == null) {
+      return Icon(
+        isDir ? Icons.folder : Icons.insert_drive_file_outlined,
+        size: 38,
+        color: isDir ? const Color(0xFFF2B429) : cs.primary,
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 64,
+        height: 64,
+        child: Image.network(
+          url!,
+          fit: BoxFit.cover,
+          cacheWidth: 256,
+          filterQuality: FilterQuality.low,
+          errorBuilder: (context, error, stack) => Icon(Icons.image_outlined, size: 38, color: cs.primary),
+        ),
+      ),
+    );
+  }
+
+  static bool _isImage(String name) {
+    final dot = name.lastIndexOf('.');
+    final ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
+    return const {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'}.contains(ext);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -711,11 +683,7 @@ class _GridCard extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                isDir ? Icons.folder : Icons.insert_drive_file_outlined,
-                size: 38,
-                color: isDir ? const Color(0xFFF2B429) : cs.primary,
-              ),
+              _thumb(context, cs, isDir),
               const SizedBox(height: 10),
               Text(
                 item.name,
@@ -750,15 +718,7 @@ class _Welcome extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 92,
-              height: 92,
-              decoration: BoxDecoration(
-                color: cs.primaryContainer,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: Icon(Icons.cloud_outlined, size: 42, color: cs.onPrimaryContainer),
-            ),
+            Image.asset('assets/icon-512.png', width: 96, height: 96),
             const SizedBox(height: 20),
             const Text(
               'Turn GitHub into your drive',

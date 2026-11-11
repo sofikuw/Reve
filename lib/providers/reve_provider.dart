@@ -34,6 +34,7 @@ class ReveProvider with ChangeNotifier {
 
   String _currentPath = '';
   List<GithubFileItem> _files = [];
+  final Map<String, List<GithubFileItem>> _listingCache = {};
   bool _isLoading = false;
   bool _isUploading = false;
   String? _errorMessage;
@@ -181,6 +182,7 @@ class ReveProvider with ChangeNotifier {
     _repositories = [];
     _branches = [];
     _files = [];
+    _listingCache.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -255,6 +257,7 @@ class ReveProvider with ChangeNotifier {
     _selectedBranch = null;
     _branches = [];
     _files = [];
+    _listingCache.clear();
     notifyListeners();
     await fetchBranches();
   }
@@ -286,6 +289,7 @@ class ReveProvider with ChangeNotifier {
   Future<void> selectBranch(String branch) async {
     _selectedBranch = branch;
     _currentPath = '';
+    _listingCache.clear();
     notifyListeners();
     await fetchContents();
   }
@@ -294,11 +298,21 @@ class ReveProvider with ChangeNotifier {
   // Browsing
   // ---------------------------------------------------------------------------
 
+  /// Folder listings are cached per branch+path: reopening a folder paints from
+  /// memory and revalidates in the background, which is what makes back/forward
+  /// feel instant on a phone.
+  String get _listingKey => '${owner}/${repoName}/${_selectedBranch ?? ''}/$_currentPath';
+
   Future<void> fetchContents() async {
     if (_activeAccount == null || _selectedRepo == null) return;
-    _isLoading = true;
+    final key = _listingKey;
+    final cached = _listingCache[key];
+
+    _isLoading = cached == null;
     _errorMessage = null;
+    if (cached != null) _files = cached;
     notifyListeners();
+
     try {
       final items = await GithubService.getContents(
         _activeAccount!.token,
@@ -311,7 +325,11 @@ class ReveProvider with ChangeNotifier {
         if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
       });
-      _files = items;
+      final changed = cached == null ||
+          cached.length != items.length ||
+          !List.generate(items.length, (i) => cached[i].sha == items[i].sha).every((same) => same);
+      _listingCache[key] = items;
+      if (changed) _files = items;
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
@@ -319,6 +337,11 @@ class ReveProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// A commit can change any ancestor listing, so drop them all. They refill
+  /// on the next visit and the fetch that follows a mutation repopulates the
+  /// folder you are looking at.
+  void invalidateListings() => _listingCache.clear();
 
   Future<void> navigateToFolder(String path) async {
     _currentPath = path;
@@ -410,6 +433,7 @@ class ReveProvider with ChangeNotifier {
           sha: match.sha,
         );
       }
+      invalidateListings();
       await fetchContents();
       return UploadResult(true, '$fileName uploaded to $path', path: path);
     } catch (e) {
@@ -447,6 +471,7 @@ class ReveProvider with ChangeNotifier {
           branch: _selectedBranch,
         );
       }
+      invalidateListings();
       await fetchContents();
       return true;
     } catch (e) {
@@ -475,6 +500,7 @@ class ReveProvider with ChangeNotifier {
         message: message ?? 'Create folder $clean via reve',
         branch: _selectedBranch,
       );
+      invalidateListings();
       await fetchContents();
       return true;
     } catch (e) {
