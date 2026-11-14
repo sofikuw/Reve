@@ -10,7 +10,9 @@ permissions:
   contents: read
 
 env:
-  JAVA_VERSION: '17'
+  # 21, not 17: the lint that ships with AGP calls List.removeLast(), which only
+  # exists in Java 21 — on 17 `lintVitalAnalyzeRelease` dies in a plugin module.
+  JAVA_VERSION: '21'
 
 jobs:
   build:
