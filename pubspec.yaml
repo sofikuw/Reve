@@ -2,7 +2,7 @@ name: reve
 description: "Reve - turn GitHub repositories into personal cloud storage, with a MiXplorer-style file manager and Material 3 UI."
 publish_to: "none"
 
-version: 1.1.0+2
+version: 1.2.0+3
 
 environment:
   sdk: ">=3.5.0 <4.0.0"

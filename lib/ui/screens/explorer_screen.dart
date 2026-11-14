@@ -133,6 +133,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           : Column(
               children: [
                 _breadcrumbs(provider, cs),
+                _transferBar(provider, cs),
                 Expanded(child: _fileArea(provider, cs)),
               ],
             ),
@@ -218,6 +219,40 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     );
   }
 
+  /// The same thin bar the web client puts under the breadcrumbs: uploads,
+  /// downloads and preview loads all report through it.
+  Widget _transferBar(ReveProvider provider, ColorScheme cs) {
+    if (!provider.isBusy) return const SizedBox.shrink();
+    final label = provider.progressLabel;
+    return Container(
+      color: cs.surfaceContainerLow,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: provider.progress,
+              minHeight: 3,
+              backgroundColor: cs.surfaceContainerHighest,
+            ),
+          ),
+          if (label != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _fileArea(ReveProvider provider, ColorScheme cs) {
     if (provider.isLoading && provider.files.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -276,22 +311,34 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           leading: _leading(item),
           title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            item.isDirectory ? 'Folder' : _formatSize(item.size),
+            item.isDirectory ? 'Folder' : formatBytes(item.size),
             style: const TextStyle(fontSize: 11.5),
           ),
           onTap: () => _activate(provider, item),
           onLongPress: () => _showItemSheet(provider, item),
-          trailing: PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, size: 20),
-            onSelected: (value) => _onAction(provider, item, value),
-            itemBuilder: (context) => [
-              if (!item.isDirectory) ...[
-                const PopupMenuItem(value: 'preview', child: Text('Preview')),
-                const PopupMenuItem(value: 'download', child: Text('Open download URL')),
-              ],
-              PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!item.isDirectory)
+                IconButton(
+                  tooltip: 'Download',
+                  icon: const Icon(Icons.download_outlined, size: 20),
+                  onPressed: () => _download(provider, item),
+                ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, size: 20),
+                onSelected: (value) => _onAction(provider, item, value),
+                itemBuilder: (context) => [
+                  if (!item.isDirectory) ...[
+                    const PopupMenuItem(value: 'preview', child: Text('Preview')),
+                    const PopupMenuItem(value: 'download', child: Text('Download')),
+                    const PopupMenuItem(value: 'open', child: Text('Open on GitHub')),
+                  ],
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  ),
+                ],
               ),
             ],
           ),
@@ -337,14 +384,39 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
   Future<void> _onAction(ReveProvider provider, GithubFileItem item, String value) async {
     if (value == 'preview') return _preview(item);
-    if (value == 'download') {
-      final url = provider.downloadUrlFor(item);
-      if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-      }
+    if (value == 'download') return _download(provider, item);
+    if (value == 'open') return _openOnGithub(provider, item);
+    if (value == 'delete') return _delete(provider, item);
+  }
+
+  /// Reads the bytes through the API (so private repositories work) and hands
+  /// them to the system save sheet; the bar under the breadcrumbs follows.
+  Future<void> _download(ReveProvider provider, GithubFileItem item) async {
+    if (provider.selectedRepo == null) {
+      _snack('Pick a repository first');
       return;
     }
-    if (value == 'delete') return _delete(provider, item);
+    try {
+      final bytes = await provider.readBytes(item, label: 'Downloading ${item.name}');
+      if (!mounted) return;
+      final saved = await FilePicker.saveFile(
+        dialogTitle: 'Save ${item.name}',
+        fileName: item.name,
+        bytes: bytes,
+      );
+      _snack(saved == null ? 'Download cancelled' : 'Saved ${item.name}');
+    } catch (e) {
+      _snack('Could not download ${item.name}: $e');
+    }
+  }
+
+  Future<void> _openOnGithub(ReveProvider provider, GithubFileItem item) async {
+    final url = item.htmlUrl ?? provider.downloadUrlFor(item);
+    if (url == null) {
+      _snack('No URL for ${item.name}');
+      return;
+    }
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   Future<void> _showItemSheet(ReveProvider provider, GithubFileItem item) async {
@@ -360,7 +432,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
               ListTile(
                 leading: _leading(item),
                 title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text('${item.path} · ${item.isDirectory ? 'folder' : _formatSize(item.size)}'),
+                subtitle: Text('${item.path} · ${item.isDirectory ? 'folder' : formatBytes(item.size)}'),
               ),
               const Divider(height: 1),
               if (!item.isDirectory)
@@ -374,14 +446,21 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 ),
               if (!item.isDirectory)
                 ListTile(
-                  leading: const Icon(Icons.open_in_new),
-                  title: const Text('Open raw download URL'),
+                  leading: const Icon(Icons.download_outlined),
+                  title: const Text('Download'),
+                  subtitle: const Text('Saves to your device, private repositories included'),
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    final url = provider.downloadUrlFor(item);
-                    if (url != null) {
-                      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                    }
+                    _download(provider, item);
+                  },
+                ),
+              if (!item.isDirectory)
+                ListTile(
+                  leading: const Icon(Icons.open_in_new),
+                  title: const Text('Open on GitHub'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openOnGithub(provider, item);
                   },
                 ),
               ListTile(
@@ -602,18 +681,6 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     return 'file';
   }
 
-  static String _formatSize(int size) {
-    if (size < 1024) return '$size B';
-    const units = ['KB', 'MB', 'GB'];
-    var value = size / 1024;
-    var unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    return '${value >= 10 ? value.round() : value.toStringAsFixed(1)} ${units[unit]}';
-  }
-
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -694,7 +761,7 @@ class _GridCard extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                isDir ? 'folder' : _ExplorerScreenState._formatSize(item.size),
+                isDir ? 'folder' : _ExplorerScreenState.formatBytes(item.size),
                 style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
               ),
             ],

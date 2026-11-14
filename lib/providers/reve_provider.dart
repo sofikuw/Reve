@@ -38,6 +38,13 @@ class ReveProvider with ChangeNotifier {
   bool _isLoading = false;
   bool _isUploading = false;
   String? _errorMessage;
+
+  /// `null` while idle; 0…1 while a transfer knows its size. When the size is
+  /// unknown the bar is indeterminate and [progress] stays `null`.
+  double? _progress;
+  bool _progressIndeterminate = false;
+  String? _progressLabel;
+  int _progressStep = -1;
   bool _autoSortUploads = true;
   int _lastRateLimit = -1;
   String _oauthClientId = AppConfig.oauthClientId;
@@ -54,6 +61,10 @@ class ReveProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isUploading => _isUploading;
   String? get errorMessage => _errorMessage;
+  double? get progress => _progress;
+  bool get progressIndeterminate => _progressIndeterminate;
+  String? get progressLabel => _progressLabel;
+  bool get isBusy => _progress != null || _progressIndeterminate;
   bool get autoSortUploads => _autoSortUploads;
   int get lastRateLimit => _lastRateLimit;
   bool get isConnected => _activeAccount != null;
@@ -125,6 +136,44 @@ class ReveProvider with ChangeNotifier {
 
   void clearError() {
     _errorMessage = null;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Transfer progress (one bar for uploads, downloads and preview loads)
+  // ---------------------------------------------------------------------------
+
+  void _startProgress(String label) {
+    _progress = 0;
+    _progressIndeterminate = false;
+    _progressLabel = label;
+    _progressStep = 0;
+    notifyListeners();
+  }
+
+  /// Streams call this for every chunk, so only whole percent steps notify.
+  void _reportProgress(double? fraction) {
+    if (fraction == null) {
+      if (_progressIndeterminate) return;
+      _progress = null;
+      _progressIndeterminate = true;
+      notifyListeners();
+      return;
+    }
+    final value = fraction.isFinite ? fraction.clamp(0.0, 1.0).toDouble() : 0.0;
+    final step = (value * 100).round();
+    if (!_progressIndeterminate && step == _progressStep) return;
+    _progress = value;
+    _progressIndeterminate = false;
+    _progressStep = step;
+    notifyListeners();
+  }
+
+  void _endProgress() {
+    _progress = null;
+    _progressIndeterminate = false;
+    _progressLabel = null;
+    _progressStep = -1;
     notifyListeners();
   }
 
@@ -398,8 +447,13 @@ class ReveProvider with ChangeNotifier {
     }
 
     _isUploading = true;
-    notifyListeners();
+    _startProgress('Uploading $fileName…');
     final path = _targetPathFor(fileName);
+    void report(double fraction) {
+      _progressLabel = 'Uploading $fileName · ${(fraction * 100).round()}%';
+      _reportProgress(fraction);
+    }
+
     try {
       try {
         await GithubService.uploadFile(
@@ -410,6 +464,7 @@ class ReveProvider with ChangeNotifier {
           bytes: bytes,
           message: message ?? 'Upload $fileName via reve',
           branch: _selectedBranch,
+          onProgress: report,
         );
       } on Exception {
         // The path may already exist: fetch its blob sha and overwrite.
@@ -431,6 +486,7 @@ class ReveProvider with ChangeNotifier {
           message: message ?? 'Update $fileName via reve',
           branch: _selectedBranch,
           sha: match.sha,
+          onProgress: report,
         );
       }
       invalidateListings();
@@ -441,7 +497,7 @@ class ReveProvider with ChangeNotifier {
       return UploadResult(false, e.toString());
     } finally {
       _isUploading = false;
-      notifyListeners();
+      _endProgress();
     }
   }
 
@@ -517,17 +573,37 @@ class ReveProvider with ChangeNotifier {
     return GithubService.rawUrl(owner, repoName, _selectedBranch ?? '', item.path);
   }
 
-  Future<String> readText(GithubFileItem item) async {
+  /// Bytes of [item] with the shared progress bar attached. Used by both the
+  /// preview (render what was read) and Download (save what was read).
+  Future<Uint8List> readBytes(
+    GithubFileItem item, {
+    String? label,
+    bool report = true,
+  }) async {
     if (_activeAccount == null || _selectedRepo == null) {
-      throw Exception('No repository selected');
+      throw Exception('Connect an account and pick a repository first.');
     }
-    return GithubService.getTextFile(
-      _activeAccount!.token,
-      owner,
-      repoName,
-      item.path,
-      branch: _selectedBranch,
-    );
+    final verb = label ?? 'Loading ${item.name}';
+    if (report) _startProgress('$verb…');
+    try {
+      return await GithubService.fetchBytes(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        path: item.path,
+        branch: _selectedBranch,
+        sha: item.sha,
+        onProgress: (fraction, loaded) {
+          if (!report) return;
+          _progressLabel = fraction == null
+              ? '$verb · ${formatBytes(loaded)}'
+              : '$verb · ${(fraction * 100).round()}%';
+          _reportProgress(fraction);
+        },
+      );
+    } finally {
+      if (report) _endProgress();
+    }
   }
 }
 

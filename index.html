@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>reve — GitHub as cloud storage</title>
-<meta name="description" content="Turn your GitHub repositories into personal cloud storage. Multi-account PAT and OAuth login, MiXplorer-style file manager, Material 3 design.">
+<meta name="description" content="Turn your GitHub repositories into personal cloud storage. Multi-account OAuth sign-in, MiXplorer-style file manager, Material 3 design.">
 <meta name="theme-color" content="#101014">
-<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2MDAgNjAwIj48cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjYwMCIgZmlsbD0iI0Y2RjNFRSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAsNjAwKSBzY2FsZSgwLjEsLTAuMSkiIGZpbGw9IiMyMDI4MzYiPjxwYXRoIGQ9Ik0yOTQ3IDQwMzMgYy0xOCAtMjcgLTY1IC05MyAtMTAyIC0xNDggLTM4IC01NSAtODkgLTEyOSAtMTE0IC0xNjUgLTI0IC0zNiAtMTY4IC0yNDUgLTMxOSAtNDY1IC0xNTEgLTIyMCAtMzIzIC00NzAgLTM4MiAtNTU1IC0zMjEgLTQ2NSAtNTMwIC03NzIgLTUzMCAtNzc2IDAgLTIgMTM3IC00IDMwNCAtNCBsMzAzIDAgMzAgNDggYzE2IDI2IDE0NCAyMjkgMjg1IDQ1MiAxNDAgMjIzIDMyNCA1MTUgNDA4IDY1MCA4NCAxMzUgMTU4IDI0OCAxNjQgMjUyIDYgNCAxNSAzIDIxIC0yIDggLTcgMTIgLTUgMTIgNSAwIDggLTMgMTMgLTUgMTAgLTMgLTMgLTEyIDEgLTIwIDggLTEzIDEwIC0xNCA5IC03IC0yIDYgLTExIDQgLTEzIC04IC04IC0xMSA0IC0yMiAtMyAtMzQgLTIzIC05IC0xNyAtMjMgLTMwIC0zMSAtMzAgLTcgMCAtMTEgLTQgLTggLTkgOCAtMTIgLTQgLTQxIC0xNiAtNDEgLTcgMCAtNiA1IDEgMTQgOSAxMCA3IDE3IC02IDI3IC0xNiAxMiAtMTcgMTIgLTYgLTIgNyAtOSAxMCAtMTkgNiAtMjMgLTEyIC0xMiAtMTIgLTM2IDAgLTI5IDcgNCA2IC0xIC0yIC0xMSAtOSAtMTAgLTIzIC0xNSAtMzQgLTEyIC0xMCAyIC0xNiAyIC0xMyAtMSAzIC00IDAgLTEzIC02IC0yMiAtMTAgLTEzIC0xMCAtMTQgMiAtMyAyMiAxOSAzNSAxNCAxNyAtNiAtMTAgLTEwIC0xNCAtMjIgLTEwIC0yNSAzIC00IDEgLTcgLTUgLTcgLTYgMCAtMTYgOCAtMjEgMTggLTYgOSAtMTEgMTIgLTExIDUgMCAtNiA1IC0xNSAxMCAtMTggMTYgLTEwIDEyIC0yNSAtNyAtMjYgLTExIDAgLTEzIC0zIC02IC02IDkgLTMgNSAtMTUgLTEzIC0zOCAtMTQgLTE5IC0yNSAtMzYgLTI1IC0zOSAzIC0xOCAwIC0xOSAtMTAgLTYgLTggMTIgLTkgOSAtNCAtOSA2IC0xOSA0IC0yMyAtOCAtMTggLTEyIDQgLTE0IDIgLTEwIC0xMCA1IC0xMiAzIC0xNCAtNyAtOCAtOCA1IC0xMSA0IC02IC0zIDExIC0xOCAtMjUgLTgxIC00MiAtNzQgLTEwIDMgLTEzIDEgLTggLTYgMyAtNiAyIC0xMyAtNCAtMTcgLTYgLTQgLTcgLTEyIC0zIC0xOCA0IC04IDEgLTcgLTkgMSAtMTQgMTEgLTE2IDEwIC0xMSAtNiA0IC0xOCAtMjEgLTgyIC0zMyAtODIgLTMgMCAtMyA0IDEgOSAzIDUgMCAxMyAtNyAxNyAtNyA0IC0xMCA0IC02IC0xIDQgLTQgMiAtMTUgLTUgLTIzIC05IC0xMyAtOSAtMTQgMSAtOCA2IDQgMTIgMiAxMiAtNCAwIC02IC03IC0xMyAtMTUgLTE2IC04IC00IC0xNSAtMTEgLTE1IC0xOCAwIC0xNiAtNTUgLTk3IC02MiAtOTEgLTMgMyAtMTEgLTMgLTE5IC0xMiAtMTMgLTE2IC0xMiAtMTcgNCAtNCAyMSAxNyAyMyAtMiAyIC0xOSAtOSAtNyAtMTMgLTE1IC0xMSAtMTcgMiAtMyAtMyAtMTMgLTEyIC0yMyAtMTMgLTE1IC0xOSAtMTcgLTMxIC04IC0xMyAxMCAtMTQgMTAgLTMgLTIgMTUgLTE3IDE2IC0zNCAyIC0yNSAtNiA0IC05IDMgLTggLTIgNCAtMTQgLTEzIC01MyAtMjMgLTUzIC01IDAgLTggLTMgLTcgLTcgMiAtNSAtNiAtMjMgLTE3IC00MSAtMTQgLTIzIC0yNSAtMzIgLTM4IC0yOCAtMTQgMyAtMTYgMiAtNyAtOSA4IC0xMCA2IC0xOSAtMTIgLTM2IC0xMyAtMTIgLTE3IC0xOCAtMTAgLTE0IDExIDYgMTIgMyAzIC0xNCAtNyAtMTEgLTE0IC0yMSAtMTcgLTIxIC0zIDAgLTIgNSAyIDEyIDQgNyAzIDggLTUgNCAtNyAtNSAtOSAtMTYgLTUgLTI4IDQgLTE0IDIgLTE4IC01IC0xNCAtNyA1IC04IDEgLTQgLTEwIDMgLTEwIDIgLTE1IC0zIC0xMiAtNSAzIC0xOSAtMTAgLTMxIC0yOSAtMTMgLTE5IC0xNyAtMzEgLTEwIC0yNyAxMSA3IC0xOCAtMzMgLTM0IC00NiAtMyAtMyAtMTUgLTIwIC0yNSAtMzkgLTI2IC00NiAtMzQgLTU5IC03MSAtMTEyIC0xOCAtMjYgLTI5IC01MCAtMjUgLTU0IDQgLTUgMSAtNSAtNiAtMSAtNyA0IC05IDEzIC01IDE5IDUgOSAyIDggLTggMCAtMTEgLTkgLTY3IC0xMyAtMTkwIC0xMyAtOTYgLTEgLTIwNCAtMiAtMjQxIC0zIC0zNiAtMSAtNjQgMiAtNjEgNyAzIDQgLTQgNSAtMTYgMSAtMTIgLTQgLTIxIC0yIC0yMSA0IDAgNiA1IDExIDExIDExIDUgMCA3IDUgNCAxMCAtOSAxNCA4IDEyIDI1IC0yIDEyIC0xMSAxMiAtMTAgMSA0IC0xMSAxNSAtOCAyNCAyMCA2MiAxNyAyNSAzNiA0MyA0MiAzOSA2IC0zIDcgLTEgMyA1IC05IDE2IDUyIDEwNCA2NiA5NiA3IC00IDggLTIgNCA1IC0xMCAxNSA1MyAxMTEgNzMgMTExIDEzIDAgMTMgMiAzIDkgLTExIDcgLTExIDkgMiAxNCA4IDMgMTcgMiAyMCAtNCAyIC01IDMgLTQgMSAzIC0xIDcgLTggMTIgLTE1IDEwIC0xMyAtMyAxNCAzOCA1MyA4MSAxNSAxNSAyNCAyNyAyMSAyNyAtMyAwIDAgOSA2IDIwIDYgMTEgMTUgMTggMjEgMTUgNSAtNCA4IC0yIDcgNCAtMiA1IDYgMTcgMTcgMjYgMTEgOSAxNCAxNCA4IDEwIC03IC0zIC0xMyAtMiAtMTMgMyAwIDYgNyAxMiAxNSAxNiA4IDMgMTUgMTMgMTUgMjIgMCAxMSA2IDE1IDIwIDExIDE3IC00IDE4IC0yIDkgMTUgLTggMTUgLTggMTkgMCAxNCA2IC00IDExIC0xIDExIDYgMCAyNCA0NCA3NSA2MyA3MiA5IC0xIDE1IDIgMTEgNyAtMyA1IC0xMCA2IC0xNiAzIC02IC00IC04IC0xIC02IDcgMyA4IDEyIDEzIDE5IDExIDggLTIgMTEgMCA3IDMgLTEwIDEwIDEwIDQ1IDI1IDQ1IDggMCA4IC0zIC0xIC05IC0xMSAtNyAtMTEgLTkgMSAtMTQgMTEgLTQgMTUgMCAxMiAxNCAtMiAxMCAtNiAyMyAtMTAgMjggLTMgNSAwIDEzIDYgMTcgOCA1IDkgMyA0IC02IC01IC05IC00IC0xMSAzIC02IDcgNCAxMiAxNCAxMiAyMiAwIDggNCAxNCAxMCAxNCA1IDAgOSAzIDggOCAtNCAxMyAzOSA3MiA0NyA2NCA1IC00IDUgLTIgMiA0IC0zIDYgMyAyMSAxNCAzMiAxMSAxMiAxNyAyMiAxMyAyMiAtMyAwIC0xIDcgNiAxNSA3IDggMTcgMTIgMjMgOCA1IC0zIDcgLTIgNCA0IC00IDUgNSAyNSAxOCA0MyAxNCAxOSAyNSA0MCAyNSA0OCAwIDcgNCAxMSA5IDggNSAtMyAxNCA4IDIxIDI0IDcgMTcgMTYgMzAgMjEgMzAgNSAwIDE0IDExIDIxIDI1IDYgMTMgMTUgMjIgMjAgMTkgNSAtMyA3IC0yIDYgMyAtNCAxNiAxNCA1MyAyMyA0NyA1IC0zIDkgLTIgOCAzIC0zIDIxIDE1IDU0IDI3IDQ5IDcgLTMgMTYgMCAyMCA2IDQgNyAzIDggLTQgNCAtMjAgLTEyIC0xNCAxIDI5IDYxIDIyIDMyIDQ1IDU3IDUxIDU1IDUgLTEgNyAyIDQgNyAtNiAxMCAyOCA2NiA1OCA5NiA5IDkgMTYgMjEgMTYgMjYgMCA2IDQgOCA4IDUgNCAtMiAxNCAwIDIyIDYgMTIgOCAxMiA5IC0yIDQgLTIxIC02IC0yMiAtMiAtOCAyNSA2IDEwIDE4IDE5IDI4IDIwIDExIDAgMTMgMiA0IDYgLTEwIDQgLTkgOSA1IDIwIDEwIDggMTEgMTEgNCA3IC05IC01IC03IDQgNyAyMyAzMCA0MiA0OSA1NiA2NCA0NyAxMCAtNiAxMSAtNSAxIDcgLTEwIDEyIC04IDIyIDEzIDUyIDEzIDIwIDI5IDM3IDM0IDM3IDUgMCA2IDcgMyAxNyAtNCAxMSAtMyAxNCA1IDkgOCAtNCAxNiAzIDIyIDIwIDYgMTUgMTggMzQgMjggNDEgMTIgMTAgMTIgMTIgMiA4IC0xMCAtNCAtOSAtMiAzIDggOSA4IDE3IDE4IDE3IDIzIDAgNSA5IDE1IDIwIDIyIDExIDYgMTcgMTggMTQgMjUgLTIgNyA1IDIyIDE3IDMzIDEzIDEwIDE5IDEzIDE1IDcgLTQgLTcgLTMgLTEzIDMgLTEzIDcgMCAxMiAtNTYgMTQgLTE1MiBsMyAtMTUzIDIgMTYyIGMyIDE0NSAwIDE2MyAtMTUgMTczIC0xNyAxMSAtMTcgMTEgMCA2IDkgLTMgMTcgLTEgMTcgNSAwIDYgNCA4IDkgNSA1IC0zIDE1IDIgMjIgMTIgMTIgMTUgMTIgMTYgLTIgNCAtMTQgLTEwIC0xOCAtMTAgLTIyIDEgLTQgMTAgMiAxMyAyMSAxMSAxNSAtMiAxNTUgLTQgMzEyIC00IGwyODYgLTEgMiAtMTYwIGMwIC04OCA0IC0xNjUgOCAtMTcxIDQgLTcgMyAtOCAtNCAtNCAtMTcgMTAgLTE0IC02IDYgLTMyIDE2IC0yMSAxOSAtMjEgNDAgLTcgMTIgOSAyMiAyMCAyMiAyNSAwIDEzIDQ3IDgwIDY4IDk3IDExIDkgMTIgMTIgMiA4IC04IC00IDEgOCAyMCAyNiAxOSAxOCAzNCAzNyAzMiA0MiAtMiA1IDQgNyAxMiA0IDkgLTQgMTUgLTEgMTMgNSAtMSA2IDE4IDIxIDQzIDM1IDI1IDEzIDQ3IDI4IDQ4IDMzIDIgNiAxNiAxMCAzMCAxMCAxOSAwIDIzIDMgMTMgOSAtMTYgMTAgLTExIDEzIDU2IDM1IDI5IDEwIDU3IDE1IDYzIDExIDUgLTMgMTAgLTIgMTAgMyAwIDEyIDM3IDIyIDExNCAyOSA3NiA3IDc4IDcgMTUxIDAgMzMgLTMgNjggLTYgNzcgLTYgOSAtMSAyMyAtOCAzMiAtMTYgMTMgLTEzIDEzIC0yMyAtNSAtODUgLTEwIC0zOCAtMTggLTc5IC0xOCAtOTIgMSAtMjEgLTkgLTg1IC0yOSAtMTc4IC03IC0zMyAtOSAtMzUgLTQ5IC0zNiAtMjMgMCAtNDAgMiAtMzggNiA0IDcgLTE2NSAzIC0yMTUgLTUgLTM5IC03IC05OSAtMjYgLTExNSAtMzYgLTUgLTMgLTIwIC01IC0zMiAtNCAtMTMgMSAtMjMgLTMgLTIzIC04IDAgLTUgLTYgLTcgLTEzIC00IC04IDMgLTIwIDEgLTI4IC01IC0xMSAtOCAtMTAgLTkgNCAtNCAxMSAzIDE2IDIgMTIgLTQgLTMgLTYgLTEyIC0xMCAtMTggLTEwIC03IDAgLTI3IC0xNCAtNDQgLTMxIC0xOCAtMTYgLTMzIC0yOCAtMzMgLTI1IDAgMiAtMTMgLTkgLTMwIC0yNiAtMTYgLTE2IC0zMCAtMzQgLTMwIC0zOSAwIC02IC00IC04IC05IC01IC01IDMgLTEyIC0xIC0xNSAtMTAgLTMgLTkgLTExIC0xMiAtMTggLTggLTEwIDYgLTEwIDQgMCAtOCAxMSAtMTQgMTAgLTE4IC02IC0yNyAtMTEgLTYgLTIyIC03IC0yNiAtMyAtNCAzIC00IC0xIC0xIC0xMCA0IC05IC0xIC0zMCAtOSAtNDcgLTkgLTE3IC0xNiAtMzMgLTE1IC0zNiAwIC00IC03IC0xNyAtMTYgLTMxIC05IC0xNCAtMTQgLTMyIC0xMSAtMzkgMyAtOCAxIC0xNyAtNCAtMjAgLTQgLTMgLTEwIDEgLTEzIDcgLTUgMTcgLTUgMTEgLTkgLTY2MiAtMyAtNTc3IC0zIC01ODYgLTIzIC01ODggLTExIC0xIC01NiAtMSAtMTAwIC0xIC00NCAwIC0xNzAgMCAtMjgwIC0xIGwtMjAwIC0xIDIgNjM4IGMyIDc3MSAxIDcwNSAxMiA2OTggNSAtMyAxMyAwIDE3IDYgNCA3IDMgOSAtNCA1IC02IC0zIC0xMyAtMiAtMTcgMyAtMyA2IC0xMiA4IC0yMCA0IC0xMyAtNCAtMTUgLTk4IC0xNSAtNjk0IGwwIC02ODkgMzI4IDAgMzI3IDAgLTMgNTUyIGMtMyA1OTEgMiA2NzQgNDMgNzg0IDM5IDEwMyAxMTYgMTk5IDIxMCAyNjQgMTE2IDc5IDMwMSAxMTUgNDU2IDg5IGw4NiAtMTUgMzcgMjEzIGMyMCAxMTcgMzkgMjE5IDQyIDIyNyA5IDIzIC05NCA0MSAtMjMxIDQxIC05OCAwIC0xMzQgLTUgLTE5NSAtMjMgLTE2MSAtNTAgLTMwMSAtMTUzIC0zODYgLTI4MCAtMjEgLTMzIC00NSAtNjggLTUxIC03OCAtMTAgLTE1IC0xMiAyMSAtMTAgMTg0IGwyIDIwMiAtMzI3IDAgLTMyNiAwIC0zNSAtNDd6Ii8+PC9nPjwvc3ZnPg==">
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAACNklEQVR4nO2WW28TMRCFZ+yxvRVJtoGGXJpE6Q3+/+9AQkCFkGilUpJ0c2lLScNmL14PD0EItUk2RKrgIfNoWec7OvaRjeH9LTzliCdV3wK2gH8DQESBKAQCADPPV1bsp79Sl0JEccwMAKAUEZFzLkkSSSSFmPM2BDCz1vrs/CJzzmj9IwyLhUKpVBwMR55nwnDWbNQKhWfOuU0AzKyUGo9vMudenxwgoM2yd6efhMBXxwdmxzs/u2DmhVGtBRBCxHF8ffvt5KiTphkAO+Z6teL7pW4vsFk2m832G9Use2h/LQAzK0Wfzy8atZdaURQngKiJ/FLxy2WvuV/TWgkUiLjwDHJu0Tz6/tVwx/P2Kntv3p7e3U2UlM65y+7V8WF7t1TUShHJher5AClFGM4m99Ojw3YQDJI0JZKIGMeJ1soYEycJMy9TzwEws0DR7QftViOK4pvbu8NOK7UZIAKC5xlmt7oEqwDMbLT+2g88o33fv+z267UKogBgAAAGYAbIUV8KYAYp5WQ6DcPZQac1HIyA4cXzsrX2t+UVseQDEAGAe71Bp71vbRYMx81mfa7ODMzs2Dm3KYCZiajbC8plv7jrd3tBZa/sGT1XJJJKKZJkrc3LH2BhD4QQURQNRte1auXD+49E1GrVk8RqTUTUD4bfJ/fTaWi0gjUIuOxX4ZyzNmNgz5g/405T69ghoNYq3/+KJkspSUpAeJC11mrue80zWAr4VZ5HIitbtWD+vxdtC9gCHs1PwTsjarQffQkAAAAASUVORK5CYII=">
 <style>
 /* ============================================================
    Material 3 (Material You) design tokens
@@ -132,7 +132,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--primary); }
 .i { width: 20px; height: 20px; flex: 0 0 auto; display: inline-block; vertical-align: middle;
      fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.i-logo { stroke: none; }
 .i-16 { width: 16px; height: 16px; }
 .i-18 { width: 18px; height: 18px; }
 .i-24 { width: 24px; height: 24px; }
@@ -203,7 +202,7 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; min-height:
 }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 17px; letter-spacing: -.02em; }
 .brand .logo { width: 32px; height: 32px; display: grid; place-items: center; }
-.brand .logo .i { width: 32px; height: 32px; }
+.brand .logo img { width: 32px; height: 32px; border-radius: 9px; display: block; }
 .app-bar .spacer { flex: 1 1 auto; }
 .account-chip {
   display: flex; align-items: center; gap: 8px;
@@ -378,6 +377,16 @@ dialog.wide .dialog-card { height: 86dvh; }
 .preview-body img, .preview-body video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 .preview-body audio { width: min(560px, 90%); }
 .preview-body iframe { width: 100%; height: 100%; border: none; background: #fff; }
+.pv-note { max-width: 540px; padding: 28px; text-align: center; font-size: 13px; line-height: 1.6; color: var(--on-surface-variant); }
+.pv-note b { color: var(--on-surface); }
+.pv-table { flex: 1 1 100%; align-self: stretch; height: 100%; overflow: auto; }
+.pv-table table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
+.pv-table th, .pv-table td { padding: 7px 12px; border-bottom: 1px solid var(--outline-variant); text-align: left; white-space: nowrap; }
+.pv-table th { position: sticky; top: 0; background: var(--surface-container-low); font-weight: 600; }
+.pv-font { flex: 1 1 100%; align-self: stretch; height: 100%; overflow: auto; padding: 28px 32px; }
+.pv-font .sample { margin-bottom: 18px; color: var(--on-surface); }
+.pv-hex { flex: 1 1 100%; align-self: stretch; height: 100%; overflow: auto; padding: 18px 22px; }
+.pv-hex pre { margin: 0; font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre; }
 .preview-body pre { margin: 0; padding: 20px 22px; width: 100%; height: 100%; overflow: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.65; color: var(--on-surface); white-space: pre-wrap; word-break: break-word; }
 .md { padding: 22px 26px; width: 100%; height: 100%; overflow: auto; font-size: 13.5px; line-height: 1.7; }
 .md h1, .md h2, .md h3 { letter-spacing: -.01em; line-height: 1.3; }
@@ -423,9 +432,10 @@ dialog.wide .dialog-card { height: 86dvh; }
 .snackbar.error { background: var(--error-container); color: var(--on-error-container); }
 
 /* progress bar */
-.progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100; background: transparent; overflow: hidden; display: none; }
+.progress { height: 3px; background: var(--surface-container-high); overflow: hidden; display: none; flex: 0 0 auto; }
 .progress.on { display: block; }
-.progress::after { content: ""; display: block; height: 100%; width: 40%; background: var(--primary); border-radius: 99px; animation: slide 1.1s ease-in-out infinite; }
+.progress > i { display: block; height: 100%; width: 0; background: var(--primary); transition: width .16s linear; border-radius: 0 99px 99px 0; }
+.progress.indet > i { width: 38%; animation: slide 1.15s ease-in-out infinite; }
 @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 
 .skeleton { background: linear-gradient(90deg, var(--surface-container) 25%, var(--surface-container-high) 37%, var(--surface-container) 63%); background-size: 400% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
@@ -463,10 +473,6 @@ dialog.wide .dialog-card { height: 86dvh; }
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <symbol id="i-logo" viewBox="0 0 600 600">
-      <rect width="600" height="600" fill="#F6F3EE"/>
-      <g transform="translate(0,600) scale(0.1,-0.1)" fill="#202836"><path d="M2947 4033 c-18 -27 -65 -93 -102 -148 -38 -55 -89 -129 -114 -165 -24 -36 -168 -245 -319 -465 -151 -220 -323 -470 -382 -555 -321 -465 -530 -772 -530 -776 0 -2 137 -4 304 -4 l303 0 30 48 c16 26 144 229 285 452 140 223 324 515 408 650 84 135 158 248 164 252 6 4 15 3 21 -2 8 -7 12 -5 12 5 0 8 -3 13 -5 10 -3 -3 -12 1 -20 8 -13 10 -14 9 -7 -2 6 -11 4 -13 -8 -8 -11 4 -22 -3 -34 -23 -9 -17 -23 -30 -31 -30 -7 0 -11 -4 -8 -9 8 -12 -4 -41 -16 -41 -7 0 -6 5 1 14 9 10 7 17 -6 27 -16 12 -17 12 -6 -2 7 -9 10 -19 6 -23 -12 -12 -12 -36 0 -29 7 4 6 -1 -2 -11 -9 -10 -23 -15 -34 -12 -10 2 -16 2 -13 -1 3 -4 0 -13 -6 -22 -10 -13 -10 -14 2 -3 22 19 35 14 17 -6 -10 -10 -14 -22 -10 -25 3 -4 1 -7 -5 -7 -6 0 -16 8 -21 18 -6 9 -11 12 -11 5 0 -6 5 -15 10 -18 16 -10 12 -25 -7 -26 -11 0 -13 -3 -6 -6 9 -3 5 -15 -13 -38 -14 -19 -25 -36 -25 -39 3 -18 0 -19 -10 -6 -8 12 -9 9 -4 -9 6 -19 4 -23 -8 -18 -12 4 -14 2 -10 -10 5 -12 3 -14 -7 -8 -8 5 -11 4 -6 -3 11 -18 -25 -81 -42 -74 -10 3 -13 1 -8 -6 3 -6 2 -13 -4 -17 -6 -4 -7 -12 -3 -18 4 -8 1 -7 -9 1 -14 11 -16 10 -11 -6 4 -18 -21 -82 -33 -82 -3 0 -3 4 1 9 3 5 0 13 -7 17 -7 4 -10 4 -6 -1 4 -4 2 -15 -5 -23 -9 -13 -9 -14 1 -8 6 4 12 2 12 -4 0 -6 -7 -13 -15 -16 -8 -4 -15 -11 -15 -18 0 -16 -55 -97 -62 -91 -3 3 -11 -3 -19 -12 -13 -16 -12 -17 4 -4 21 17 23 -2 2 -19 -9 -7 -13 -15 -11 -17 2 -3 -3 -13 -12 -23 -13 -15 -19 -17 -31 -8 -13 10 -14 10 -3 -2 15 -17 16 -34 2 -25 -6 4 -9 3 -8 -2 4 -14 -13 -53 -23 -53 -5 0 -8 -3 -7 -7 2 -5 -6 -23 -17 -41 -14 -23 -25 -32 -38 -28 -14 3 -16 2 -7 -9 8 -10 6 -19 -12 -36 -13 -12 -17 -18 -10 -14 11 6 12 3 3 -14 -7 -11 -14 -21 -17 -21 -3 0 -2 5 2 12 4 7 3 8 -5 4 -7 -5 -9 -16 -5 -28 4 -14 2 -18 -5 -14 -7 5 -8 1 -4 -10 3 -10 2 -15 -3 -12 -5 3 -19 -10 -31 -29 -13 -19 -17 -31 -10 -27 11 7 -18 -33 -34 -46 -3 -3 -15 -20 -25 -39 -26 -46 -34 -59 -71 -112 -18 -26 -29 -50 -25 -54 4 -5 1 -5 -6 -1 -7 4 -9 13 -5 19 5 9 2 8 -8 0 -11 -9 -67 -13 -190 -13 -96 -1 -204 -2 -241 -3 -36 -1 -64 2 -61 7 3 4 -4 5 -16 1 -12 -4 -21 -2 -21 4 0 6 5 11 11 11 5 0 7 5 4 10 -9 14 8 12 25 -2 12 -11 12 -10 1 4 -11 15 -8 24 20 62 17 25 36 43 42 39 6 -3 7 -1 3 5 -9 16 52 104 66 96 7 -4 8 -2 4 5 -10 15 53 111 73 111 13 0 13 2 3 9 -11 7 -11 9 2 14 8 3 17 2 20 -4 2 -5 3 -4 1 3 -1 7 -8 12 -15 10 -13 -3 14 38 53 81 15 15 24 27 21 27 -3 0 0 9 6 20 6 11 15 18 21 15 5 -4 8 -2 7 4 -2 5 6 17 17 26 11 9 14 14 8 10 -7 -3 -13 -2 -13 3 0 6 7 12 15 16 8 3 15 13 15 22 0 11 6 15 20 11 17 -4 18 -2 9 15 -8 15 -8 19 0 14 6 -4 11 -1 11 6 0 24 44 75 63 72 9 -1 15 2 11 7 -3 5 -10 6 -16 3 -6 -4 -8 -1 -6 7 3 8 12 13 19 11 8 -2 11 0 7 3 -10 10 10 45 25 45 8 0 8 -3 -1 -9 -11 -7 -11 -9 1 -14 11 -4 15 0 12 14 -2 10 -6 23 -10 28 -3 5 0 13 6 17 8 5 9 3 4 -6 -5 -9 -4 -11 3 -6 7 4 12 14 12 22 0 8 4 14 10 14 5 0 9 3 8 8 -4 13 39 72 47 64 5 -4 5 -2 2 4 -3 6 3 21 14 32 11 12 17 22 13 22 -3 0 -1 7 6 15 7 8 17 12 23 8 5 -3 7 -2 4 4 -4 5 5 25 18 43 14 19 25 40 25 48 0 7 4 11 9 8 5 -3 14 8 21 24 7 17 16 30 21 30 5 0 14 11 21 25 6 13 15 22 20 19 5 -3 7 -2 6 3 -4 16 14 53 23 47 5 -3 9 -2 8 3 -3 21 15 54 27 49 7 -3 16 0 20 6 4 7 3 8 -4 4 -20 -12 -14 1 29 61 22 32 45 57 51 55 5 -1 7 2 4 7 -6 10 28 66 58 96 9 9 16 21 16 26 0 6 4 8 8 5 4 -2 14 0 22 6 12 8 12 9 -2 4 -21 -6 -22 -2 -8 25 6 10 18 19 28 20 11 0 13 2 4 6 -10 4 -9 9 5 20 10 8 11 11 4 7 -9 -5 -7 4 7 23 30 42 49 56 64 47 10 -6 11 -5 1 7 -10 12 -8 22 13 52 13 20 29 37 34 37 5 0 6 7 3 17 -4 11 -3 14 5 9 8 -4 16 3 22 20 6 15 18 34 28 41 12 10 12 12 2 8 -10 -4 -9 -2 3 8 9 8 17 18 17 23 0 5 9 15 20 22 11 6 17 18 14 25 -2 7 5 22 17 33 13 10 19 13 15 7 -4 -7 -3 -13 3 -13 7 0 12 -56 14 -152 l3 -153 2 162 c2 145 0 163 -15 173 -17 11 -17 11 0 6 9 -3 17 -1 17 5 0 6 4 8 9 5 5 -3 15 2 22 12 12 15 12 16 -2 4 -14 -10 -18 -10 -22 1 -4 10 2 13 21 11 15 -2 155 -4 312 -4 l286 -1 2 -160 c0 -88 4 -165 8 -171 4 -7 3 -8 -4 -4 -17 10 -14 -6 6 -32 16 -21 19 -21 40 -7 12 9 22 20 22 25 0 13 47 80 68 97 11 9 12 12 2 8 -8 -4 1 8 20 26 19 18 34 37 32 42 -2 5 4 7 12 4 9 -4 15 -1 13 5 -1 6 18 21 43 35 25 13 47 28 48 33 2 6 16 10 30 10 19 0 23 3 13 9 -16 10 -11 13 56 35 29 10 57 15 63 11 5 -3 10 -2 10 3 0 12 37 22 114 29 76 7 78 7 151 0 33 -3 68 -6 77 -6 9 -1 23 -8 32 -16 13 -13 13 -23 -5 -85 -10 -38 -18 -79 -18 -92 1 -21 -9 -85 -29 -178 -7 -33 -9 -35 -49 -36 -23 0 -40 2 -38 6 4 7 -165 3 -215 -5 -39 -7 -99 -26 -115 -36 -5 -3 -20 -5 -32 -4 -13 1 -23 -3 -23 -8 0 -5 -6 -7 -13 -4 -8 3 -20 1 -28 -5 -11 -8 -10 -9 4 -4 11 3 16 2 12 -4 -3 -6 -12 -10 -18 -10 -7 0 -27 -14 -44 -31 -18 -16 -33 -28 -33 -25 0 2 -13 -9 -30 -26 -16 -16 -30 -34 -30 -39 0 -6 -4 -8 -9 -5 -5 3 -12 -1 -15 -10 -3 -9 -11 -12 -18 -8 -10 6 -10 4 0 -8 11 -14 10 -18 -6 -27 -11 -6 -22 -7 -26 -3 -4 3 -4 -1 -1 -10 4 -9 -1 -30 -9 -47 -9 -17 -16 -33 -15 -36 0 -4 -7 -17 -16 -31 -9 -14 -14 -32 -11 -39 3 -8 1 -17 -4 -20 -4 -3 -10 1 -13 7 -5 17 -5 11 -9 -662 -3 -577 -3 -586 -23 -588 -11 -1 -56 -1 -100 -1 -44 0 -170 0 -280 -1 l-200 -1 2 638 c2 771 1 705 12 698 5 -3 13 0 17 6 4 7 3 9 -4 5 -6 -3 -13 -2 -17 3 -3 6 -12 8 -20 4 -13 -4 -15 -98 -15 -694 l0 -689 328 0 327 0 -3 552 c-3 591 2 674 43 784 39 103 116 199 210 264 116 79 301 115 456 89 l86 -15 37 213 c20 117 39 219 42 227 9 23 -94 41 -231 41 -98 0 -134 -5 -195 -23 -161 -50 -301 -153 -386 -280 -21 -33 -45 -68 -51 -78 -10 -15 -12 21 -10 184 l2 202 -327 0 -326 0 -35 -47z"/></g>
-    </symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
@@ -512,15 +518,13 @@ dialog.wide .dialog-card { height: 86dvh; }
   </defs>
 </svg>
 
-<div class="progress" id="progress"></div>
-
 <div class="shell">
   <header class="app-bar">
     <button class="icon-btn" id="menuBtn" aria-label="Open repositories" onclick="toggleNav()">
       <svg class="i"><use href="#i-menu"/></svg>
     </button>
     <div class="brand">
-      <span class="logo"><svg class="i i-24"><use href="#i-logo"/></svg></span>
+      <span class="logo"><img alt="" width="32" height="32" src="data:image/png;base64,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"></span>
       <span>reve</span>
     </div>
     <div class="spacer"></div>
@@ -587,6 +591,8 @@ dialog.wide .dialog-card { height: 86dvh; }
         </div>
       </div>
 
+      <div class="progress" id="progress"><i></i></div>
+
       <div class="file-area" id="fileArea"></div>
 
       <footer class="statusbar">
@@ -614,28 +620,11 @@ dialog.wide .dialog-card { height: 86dvh; }
     </div>
     <div class="dialog-body">
       <p style="margin:0 0 12px;font-size:12.5px;color:var(--on-surface-variant)">
-        Connect multiple accounts and switch between them at any time. Tokens stay in this browser only.
+        Sign in with GitHub once, then switch between accounts whenever you like. Tokens stay in this browser only.
       </p>
       <div class="acct-list" id="acctList"></div>
 
-      <div class="tabs" role="tablist">
-        <button class="sel" id="tabPat" onclick="setAuthTab('pat')">Personal token</button>
-        <button id="tabOauth" onclick="setAuthTab('oauth')">OAuth</button>
-      </div>
-
-      <div id="patPane">
-        <div class="field">
-          <label for="patInput">Personal access token</label>
-          <input class="input" id="patInput" type="password" autocomplete="off" placeholder="ghp_… or github_pat_…">
-          <div class="help">Needs <b>repo</b> scope (classic) or <b>Contents: read &amp; write</b> (fine-grained). Create one at
-            <a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=reve" target="_blank" rel="noopener">github.com/settings/tokens</a>.</div>
-        </div>
-        <button class="btn filled" style="width:100%" onclick="loginPat()">
-          <svg class="i i-18"><use href="#i-key"/></svg> Connect with token
-        </button>
-      </div>
-
-      <div id="oauthPane" class="hidden">
+      <div id="oauthPane">
         <div class="field">
           <label for="clientIdInput">GitHub OAuth App client ID</label>
           <input class="input" id="clientIdInput" placeholder="Iv1.…" autocomplete="off">
@@ -727,7 +716,7 @@ dialog.wide .dialog-card { height: 86dvh; }
       </div>
       <div class="notice">
         <svg class="i i-18"><use href="#i-info"/></svg>
-        <span>PAT login needs no backend at all. See <b>README → OAuth backend</b> for the two-minute deployment steps.</span>
+        <span>Sign-in goes through the OAuth broker below. See <b>README → OAuth backend</b> for the two-minute deployment steps.</span>
       </div>
     </div>
     <div class="dialog-actions">
@@ -800,7 +789,6 @@ const S = {
   cache: new Map(),   // "branch|path" -> { entries, at }  (instant back/forward)
   req: new Map(),     // in-flight listing requests, deduped
   scroll: new Map(),  // "branch|path" -> scrollTop
-  text: new Map(),    // "branch|path" -> file text for the preview
 };
 
 const API = 'https://api.github.com';
@@ -871,10 +859,28 @@ function snack(msg, isError = false) {
 
 function setBusy(on, text) {
   S.busy = on;
-  $('progress').className = 'progress' + (on ? ' on' : '');
+  const bar = $('progress');
+  bar.className = 'progress' + (on ? ' on indet' : '');
+  bar.firstElementChild.style.width = on ? '' : '0';
   if (text) setStatus(text);
   $('uploadBtn').disabled = on;
   $('folderBtn').disabled = on;
+}
+
+/* 0…1 turns the bar determinate, null goes back to the sliding state. */
+function setProgress(fraction, text) {
+  const bar = $('progress');
+  const fill = bar.firstElementChild;
+  if (fraction === null || fraction === undefined) {
+    bar.classList.add('on', 'indet');
+    fill.style.width = '';
+  } else {
+    const pct = Math.max(0, Math.min(1, fraction)) * 100;
+    bar.classList.add('on');
+    bar.classList.remove('indet');
+    fill.style.width = pct.toFixed(1) + '%';
+  }
+  if (text) setStatus(text);
 }
 
 function setStatus(text, kind = '') {
@@ -976,6 +982,38 @@ function paintRate() {
   el.style.color = S.rate.remaining < 20 ? 'var(--error)' : '';
 }
 
+/* Uploads are the only requests big enough to need upload progress, and
+   fetch() cannot report it — XHR can. */
+function apiUpload(path, body, onProgress) {
+  const acct = activeAccount();
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', API + path, true);
+    xhr.setRequestHeader('Accept', 'application/vnd.github+json');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('X-GitHub-Api-Version', '2022-11-28');
+    if (acct && acct.token) xhr.setRequestHeader('Authorization', 'Bearer ' + acct.token);
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    }
+    xhr.onload = () => {
+      const remaining = xhr.getResponseHeader('x-ratelimit-remaining');
+      if (remaining !== null) {
+        S.rate = { remaining: Number(remaining), limit: Number(xhr.getResponseHeader('x-ratelimit-limit') || 0) };
+        paintRate();
+      }
+      let data = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch (_) { /* not json */ }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
+      const err = new Error((data && data.message) || `GitHub API ${xhr.status} ${xhr.statusText}`);
+      err.status = xhr.status;
+      reject(err);
+    };
+    xhr.onerror = () => reject(new Error('network error'));
+    xhr.send(JSON.stringify(body));
+  });
+}
+
 /* ============================================================
    Accounts
    ============================================================ */
@@ -1041,21 +1079,6 @@ async function addVerifiedAccount(account, type) {
   snack(`Connected as @${account.login}`);
 }
 
-async function loginPat() {
-  const token = $('patInput').value.trim();
-  if (!token) return snack('Paste a personal access token first', true);
-  setBusy(true, 'Verifying token…');
-  try {
-    const acc = await verifyToken(token);
-    $('patInput').value = '';
-    await addVerifiedAccount(acc, 'pat');
-    closeDialog('accountsDialog');
-  } catch (e) {
-    snack(e.status === 401 ? 'That token was rejected by GitHub' : e.message, true);
-  } finally {
-    setBusy(false, 'Ready');
-  }
-}
 
 function backendBase() {
   const custom = (localStorage.getItem(LS.backend) || '').trim().replace(/\/+$/, '');
@@ -1089,7 +1112,7 @@ async function startDeviceFlow() {
 
   const base = backendBase();
   if (location.protocol === 'file:') {
-    return snack('Device sign-in needs the broker deployed (set it in Settings) — or use a PAT', true);
+    return snack('Device sign-in needs the broker (set it in Settings), or open the app', true);
   }
 
   stopDeviceFlow(false);
@@ -1222,7 +1245,7 @@ function copyDeviceCode() {
 function renderAccounts() {
   const list = $('acctList');
   if (!S.accounts.length) {
-    list.innerHTML = `<div class="notice">${icon('info', 'i-18')}<span>No account connected yet. Use a personal access token below — it is the fastest option and needs no backend.</span></div>`;
+    list.innerHTML = `<div class="notice">${icon('info', 'i-18')}<span>No account connected yet. Sign in with GitHub below — the code is copied to your clipboard, no token to paste.</span></div>`;
     return;
   }
   list.innerHTML = S.accounts.map((a) => `
@@ -1230,7 +1253,7 @@ function renderAccounts() {
       <span class="avatar avatar-text" data-avatar="${esc(a.avatar)}" data-login="${esc(a.login)}"></span>
       <span class="who">
         <b>${esc(a.name || a.login)}</b>
-        <span>@${esc(a.login)} · ${esc((a.type || 'pat').toUpperCase())} · token ${esc(a.token.slice(0, 4))}…${esc(a.token.slice(-4))}</span>
+        <span>@${esc(a.login)} · OAuth · token ${esc(a.token.slice(0, 4))}…${esc(a.token.slice(-4))}</span>
       </span>
       ${a.id === S.activeId
         ? `<span class="badge">Active</span>`
@@ -1277,14 +1300,6 @@ async function onAccountChanged() {
   await loadRepos();
 }
 
-function setAuthTab(tab) {
-  if (tab !== 'oauth') stopDeviceFlow(false);
-  const isPat = tab === 'pat';
-  $('tabPat').classList.toggle('sel', isPat);
-  $('tabOauth').classList.toggle('sel', !isPat);
-  $('patPane').classList.toggle('hidden', !isPat);
-  $('oauthPane').classList.toggle('hidden', isPat);
-}
 
 function openAccounts() {
   stopDeviceFlow(false);
@@ -1371,7 +1386,6 @@ function selectRepoById(id) {
 function resetCaches() {
   S.cache.clear();
   S.req.clear();
-  S.text.clear();
   S.scroll.clear();
 }
 
@@ -1525,7 +1539,7 @@ function renderEntries(opts = {}) {
       <div class="empty-state">
         <div class="big">${icon('logo', 'i-64')}</div>
         <h3>Turn GitHub into your drive</h3>
-        <p>Connect one or more GitHub accounts with a personal access token or OAuth, pick a repository, and start uploading. Nothing passes through a third-party server.</p>
+        <p>Connect one or more GitHub accounts with OAuth, pick a repository, and start uploading. Nothing passes through a third-party server.</p>
         <button class="btn filled" style="margin-top:8px" onclick="openAccounts()">${icon('login', 'i-18')} Connect GitHub account</button>
       </div>`;
     $('countText').textContent = '';
@@ -1713,13 +1727,17 @@ async function uploadOne(file, index, total) {
   if (S.branch) body.branch = S.branch;
 
   const url = `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}`;
+  const report = (f) => setProgress(
+    ((index - 1) + f) / total,
+    `Uploading ${index}/${total} · ${file.name} · ${Math.round(f * 100)}%`,
+  );
   try {
-    await api(url, { method: 'PUT', body });
+    await apiUpload(url, body, report);
   } catch (e) {
     if (e.status !== 409) throw e;
     const existing = await api(url + (S.branch ? `?ref=${enc(S.branch)}` : ''));
     body.sha = existing.sha;
-    await api(url, { method: 'PUT', body });
+    await apiUpload(url, body, report);
   }
   setStatus(`Uploaded ${index}/${total}: ${path}`);
 }
@@ -1728,7 +1746,8 @@ async function handleFiles(fileList) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
   if (!S.repo) return snack('Select a repository first', true);
-  setBusy(true, `Uploading 0/${files.length}…`);
+  setBusy(true);
+  setProgress(0, `Uploading 0/${files.length}…`);
   let ok = 0;
   const errors = [];
   for (let i = 0; i < files.length; i++) {
@@ -1992,18 +2011,137 @@ function rawUrl(path) {
   return `https://raw.githubusercontent.com/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/${enc(S.branch || S.repo.default_branch)}/${encodePath(path)}`;
 }
 
-function downloadEntry(path) {
+function repoBase() {
+  return `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}`;
+}
+
+function apiHeaders(accept) {
+  const acct = activeAccount();
+  const h = { Accept: accept, 'X-GitHub-Api-Version': '2022-11-28' };
+  if (acct && acct.token) h.Authorization = 'Bearer ' + acct.token;
+  return h;
+}
+
+function readWithProgress(res, onProgress) {
+  const total = Number(res.headers.get('content-length') || 0);
+  if (!res.body || !res.body.getReader) return res.blob();
+  const reader = res.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+  return new Promise((resolve, reject) => {
+    const pump = () => reader.read().then(({ done, value }) => {
+      if (done) {
+        resolve(new Blob(chunks, { type: res.headers.get('content-type') || 'application/octet-stream' }));
+        return;
+      }
+      chunks.push(value);
+      loaded += value.length;
+      if (onProgress) onProgress(total ? loaded / total : null, loaded);
+      pump();
+    }).catch(reject);
+    pump();
+  });
+}
+
+/* Private repositories have no public raw URL, and the contents API refuses
+   files over a megabyte — the blob API takes the sha from the listing. */
+async function fetchFileBlob(path, { sha, onProgress } = {}) {
+  const ref = S.branch || S.repo.default_branch;
+  const tries = [];
+  if (sha) tries.push({ url: `${API}${repoBase()}/git/blobs/${enc(sha)}`, auth: true, accept: 'application/vnd.github.raw', blob: true });
+  tries.push({ url: `${API}${repoBase()}/contents/${encodePath(path)}?ref=${enc(ref)}`, auth: true, accept: 'application/vnd.github.raw' });
+  tries.push({ url: rawUrl(path), auth: false, accept: '*/*' });
+
+  let last = null;
+  for (const t of tries) {
+    try {
+      const res = await fetch(t.url, { headers: t.auth ? apiHeaders(t.accept) : { Accept: t.accept } });
+      if (!res.ok) {
+        let msg = `GitHub ${res.status}`;
+        try { const j = await res.clone().json(); if (j.message) msg = j.message; } catch (_) { /* not json */ }
+        last = new Error(msg);
+        continue;
+      }
+      // The raw media type is the fast path; a server that answers with the
+      // JSON envelope still yields the bytes, base64 and all.
+      const type = res.headers.get('content-type') || '';
+      if (t.blob && /json/i.test(type)) {
+        const data = await res.json();
+        const b64 = String(data.content || '').replace(/\s/g, '');
+        if (!b64) throw new Error('Empty blob');
+        const raw = atob(b64);
+        const bytes = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        return new Blob([bytes]);
+      }
+      return await readWithProgress(res, onProgress);
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last || new Error('Could not read this file');
+}
+
+function saveBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = rawUrl(path);
-  a.download = path.split('/').pop();
-  a.target = '_blank';
+  a.href = url;
+  a.download = name;
   a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 20000);
 }
 
-const PV = { items: [], index: 0, zoom: 1, rot: 0, panX: 0, panY: 0, wrap: false };
+async function downloadEntry(path, name) {
+  if (!S.repo) return snack('Select a repository first', true);
+  const item = S.entries.find((e) => e.path === path);
+  const fileName = name || path.split('/').pop();
+  setBusy(true);
+  setProgress(0, `Downloading ${fileName}…`);
+  try {
+    const blob = await fetchFileBlob(path, {
+      sha: item && item.sha,
+      onProgress: (f, loaded) => setProgress(f, f === null
+        ? `Downloading ${fileName} · ${fmtSize(loaded)}`
+        : `Downloading ${fileName} · ${Math.round(f * 100)}%`),
+    });
+    saveBlob(blob, fileName);
+    setStatus(`Saved ${fileName} · ${fmtSize(blob.size)}`, 'ok');
+    snack(`Downloaded ${fileName}`);
+  } catch (e) {
+    snack(`Download failed: ${e.message}`, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/* ============================================================
+   Preview — bytes first, then a renderer per type
+   ============================================================ */
+const PV = { items: [], index: 0, zoom: 1, rot: 0, panX: 0, panY: 0, wrap: false, url: null, load: 0 };
+
+const PV_TYPES = {
+  image: ['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif','tif','tiff'],
+  video: ['mp4','webm','ogv','mov','m4v','mkv'],
+  audio: ['mp3','wav','ogg','flac','m4a','aac','opus'],
+  pdf: ['pdf'],
+  markdown: ['md','markdown','mdx'],
+  json: ['json','jsonc','geojson'],
+  table: ['csv','tsv'],
+  font: ['ttf','otf','woff','woff2'],
+  text: ['txt','log','yml','yaml','toml','ini','conf','env','xml','html','htm','css','scss','less',
+    'js','mjs','cjs','ts','tsx','jsx','dart','py','rb','go','rs','java','kt','kts','c','h','cc',
+    'cpp','hpp','cs','php','sh','bash','zsh','ps1','sql','srt','vtt','ass','ssa','lrc','diff',
+    'patch','gitignore','editorconfig','properties','gradle','lock'],
+};
+
+function previewType(name) {
+  const e = extOf(name);
+  for (const [type, list] of Object.entries(PV_TYPES)) if (list.includes(e)) return type;
+  return 'binary';
+}
 
 function githubBlobUrl(path) {
   const ref = S.branch || S.repo.default_branch;
@@ -2014,15 +2152,8 @@ function currentPreview() {
   return PV.items[PV.index] || null;
 }
 
-async function textOf(path) {
-  const key = navKey(path);
-  if (S.text.has(key)) return S.text.get(key);
-  const text = await api(
-    `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}${S.branch ? `?ref=${enc(S.branch)}` : ''}`,
-    { raw: true },
-  );
-  S.text.set(key, text);
-  return text;
+function releasePreview() {
+  if (PV.url) { URL.revokeObjectURL(PV.url); PV.url = null; }
 }
 
 /* Opens the preview over a gallery of the files in the current folder, so
@@ -2038,18 +2169,15 @@ function preview(path, name) {
   loadPreview();
 }
 
-function loadPreview() {
+async function loadPreview() {
   const item = currentPreview();
   if (!item) return;
   const name = item.name || item.path.split('/').pop();
-  const kind = kindOf(name, false);
-  const url = rawUrl(item.path);
-  const body = $('previewBody');
+  const type = previewType(name);
   const many = PV.items.length > 1;
-  const isImage = kind === 'image';
-  const isPdf = extOf(name) === 'pdf';
-  const isMedia = kind === 'video' || kind === 'audio';
-  const isText = !isImage && !isPdf && !isMedia;
+  const body = $('previewBody');
+  const token = ++PV.load;
+  releasePreview();
 
   $('previewTitle').textContent = name;
   $('pvCounter').textContent = many ? `${PV.index + 1} / ${PV.items.length}` : '';
@@ -2057,54 +2185,158 @@ function loadPreview() {
   $('pvNext').classList.toggle('hidden', !many);
   $('pvInfo').textContent = [
     item.size !== undefined ? fmtSize(item.size) : '',
-    isImage || isMedia ? extOf(name).toUpperCase() : kind,
+    extOf(name).toUpperCase() || 'FILE',
     item.sha ? item.sha.slice(0, 7) : '',
   ].filter(Boolean).join(' · ');
   $('pvOpen').href = githubBlobUrl(item.path);
-  ['pvZoomIn', 'pvZoomOut', 'pvReset', 'pvRotate'].forEach((id) => $(id).classList.toggle('hidden', !isImage));
-  $('pvWrap').classList.toggle('hidden', !isText || /\.(md|markdown)$/i.test(name));
+  ['pvZoomIn', 'pvZoomOut', 'pvReset', 'pvRotate'].forEach((id) => $(id).classList.toggle('hidden', type !== 'image'));
 
+  body.innerHTML = `<div class="pv-note">Loading ${esc(name)}…</div>`;
+  setProgress(0, `Loading ${esc(name)}…`);
+  let blob;
+  try {
+    blob = await fetchFileBlob(item.path, {
+      sha: item.sha,
+      onProgress: (f, loaded) => setProgress(f, f === null
+        ? `Loading ${esc(name)} · ${fmtSize(loaded)}`
+        : `Loading ${esc(name)} · ${Math.round(f * 100)}%`),
+    });
+  } catch (e) {
+    if (token !== PV.load) return;
+    setProgress(null);
+    body.innerHTML = `<div class="pv-note"><b>${esc(name)}</b><br>Could not read this file: ${esc(e.message)}<br>
+      <button class="btn tonal" style="margin-top:14px" onclick="downloadEntry('${esc(item.path).replace(/'/g, "\\'")}')">${icon('download', 'i-18')} Download instead</button></div>`;
+    return;
+  }
+  if (token !== PV.load) return;
+  setProgress(null);
+
+  PV.url = URL.createObjectURL(blob);
   const dl = $('previewDownload');
-  dl.href = url;
+  dl.href = PV.url;
   dl.setAttribute('download', name);
 
-  body.innerHTML = isImage
-    ? `<div class="pv-stage" id="pvStage"><img id="pvImg" alt="${esc(name)}" src="${esc(url)}"></div>`
-    : kind === 'video'
-      ? `<video controls autoplay playsinline src="${esc(url)}"></video>`
-      : kind === 'audio'
-        ? `<audio controls autoplay src="${esc(url)}"></audio>`
-        : isPdf
-          ? `<iframe title="${esc(name)}" src="${esc(url)}"></iframe>`
-          : `<pre id="pvText" class="${PV.wrap ? 'wrap' : ''}">Loading…</pre>`;
-
-  if (isImage) {
-    bindStage();
-    applyView();
-  } else if (isText) {
-    loadText(item, name);
-  }
+  await renderPreview(type, name, blob, item, token);
 }
 
-async function loadText(item, name) {
-  const pre = $('pvText');
-  if (!pre) return;
-  try {
-    const text = await textOf(item.path);
-    if (currentPreview()?.path !== item.path || !$('pvText')) return;
-    if (/\.(md|markdown)$/i.test(name)) {
-      const md = document.createElement('div');
-      md.className = 'md';
-      md.style.cssText = 'width:100%;height:100%;overflow:auto;padding:18px 22px';
-      md.innerHTML = renderMarkdown(text);
-      $('pvText').replaceWith(md);
-    } else {
-      $('pvText').textContent = text.length > 400000 ? text.slice(0, 400000) + '\n\n… truncated' : text;
-    }
-  } catch (e) {
-    const el = $('pvText');
-    if (el) el.textContent = `Could not read this file: ${e.message}`;
+async function renderPreview(type, name, blob, item, token) {
+  const body = $('previewBody');
+  const url = PV.url;
+  const textKinds = ['markdown', 'json', 'table', 'text'];
+
+  if (type === 'image') {
+    body.innerHTML = `<div class="pv-stage" id="pvStage"><img id="pvImg" alt="${esc(name)}" src="${url}"></div>`;
+    bindStage();
+    applyView();
+    return;
   }
+  if (type === 'video') {
+    body.innerHTML = `<video controls autoplay playsinline src="${url}"></video>`;
+    return;
+  }
+  if (type === 'audio') {
+    body.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
+    return;
+  }
+  if (type === 'pdf') {
+    const inline = !matchMedia('(pointer: coarse)').matches;
+    body.innerHTML = inline || fileTooBigForMobile(blob)
+      ? `<iframe title="${esc(name)}" src="${url}"></iframe>`
+      : `<div class="pv-note"><b>${esc(name)}</b><br>This phone cannot show PDFs inline.<br>
+          <button class="btn filled" style="margin-top:14px" onclick="downloadEntry('${esc(item.path).replace(/'/g, "\\'")}')">${icon('download', 'i-18')} Download PDF</button></div>`;
+    return;
+  }
+  if (type === 'font') {
+    const safe = `pvfont-${Date.now()}`;
+    body.innerHTML = `<div class="pv-font">
+      <style>@font-face{font-family:${safe};src:url(${url});}</style>
+      <div class="sample" style="font-family:${safe}">Aa Bb Cc Dd Ee Ff Gg</div>
+      <div class="sample" style="font-family:${safe};font-size:26px">The quick brown fox jumps over the lazy dog 0123456789</div>
+      <p class="pv-meta" style="margin-top:18px">${esc(name)} · ${fmtSize(blob.size)}</p>
+    </div>`;
+    return;
+  }
+
+  $('pvWrap').classList.toggle('hidden', !textKinds.includes(type));
+  const read = await readText(blob);
+  const text = read.text;
+  if (token !== PV.load) return;
+
+  if (type === 'markdown') {
+    const md = document.createElement('div');
+    md.className = 'md';
+    md.style.cssText = 'width:100%;height:100%;overflow:auto;padding:18px 22px';
+    md.innerHTML = renderMarkdown(text);
+    body.replaceChildren(md);
+    return;
+  }
+  if (type === 'json') {
+    let pretty = text;
+    try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (_) { /* keep raw */ }
+    body.innerHTML = `<pre id="pvText" class="${PV.wrap ? 'wrap' : ''}">${esc(pretty)}</pre>`;
+    return;
+  }
+  if (type === 'table') {
+    body.innerHTML = `<div class="pv-table">${csvTable(text, name)}</div>`;
+    $('pvWrap').classList.add('hidden');
+    return;
+  }
+  if (type === 'text') {
+    body.innerHTML = `<pre id="pvText" class="${PV.wrap ? 'wrap' : ''}">${esc(text.length > 400000 ? text.slice(0, 400000) + '\n\n… truncated' : text)}</pre>`;
+    return;
+  }
+
+  const hex = hexDump(read.bytes.slice(0, 4096));
+  body.innerHTML = `<div class="pv-hex">
+    <p class="pv-meta" style="margin:0 0 14px">No inline viewer for this format — ${fmtSize(blob.size)}. Here is the first ${fmtSize(hex.length)}:
+      <button class="btn tonal small" style="margin-left:8px" onclick="downloadEntry('${esc(item.path).replace(/'/g, "\\'")}')">${icon('download', 'i-14')} Download</button></p>
+    <pre>${esc(hex)}</pre></div>`;
+}
+
+function fileTooBigForMobile(blob) {
+  return blob.size > 12 * 1024 * 1024 && matchMedia('(pointer: coarse)').matches;
+}
+
+async function readText(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let zeroes = 0;
+  for (let i = 0; i < Math.min(buf.length, 4096); i++) if (buf[i] === 0) zeroes++;
+  const isBinary = zeroes > 8;
+  return { bytes: buf, text: isBinary ? '' : new TextDecoder('utf-8').decode(buf), isBinary };
+}
+
+function hexDump(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 16) {
+    const row = bytes.subarray(i, i + 16);
+    const hex = Array.from(row).map((b) => b.toString(16).padStart(2, '0')).join(' ').padEnd(47, ' ');
+    const ascii = Array.from(row).map((b) => (b >= 32 && b < 127 ? String.fromCharCode(b) : '.')).join('');
+    out += i.toString(16).padStart(8, '0') + '  ' + hex + '  ' + ascii + '\n';
+  }
+  return out;
+}
+
+function csvTable(text, name) {
+  const sep = extOf(name) === 'tsv' ? '\t' : ',';
+  const rows = [];
+  let cell = '', row = [], quoted = false;
+  for (let i = 0; i < text.length && rows.length < 500; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === sep) { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (c !== '\r') cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  if (!rows.length) return '<div class="pv-note">Empty table</div>';
+  const head = rows[0].map((c) => `<th>${esc(c)}</th>`).join('');
+  const bodyRows = rows.slice(1, 500).map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('');
+  const more = rows.length >= 500 ? '<p class="pv-meta" style="padding:12px 20px">Showing the first 500 rows — download for the rest.</p>' : '';
+  return `<table><thead><tr>${head}</tr></thead><tbody>${bodyRows}</tbody></table>${more}`;
 }
 
 function applyView() {
@@ -2186,8 +2418,11 @@ function closePreview() {
   const body = $('previewBody');
   body.querySelectorAll('video, audio').forEach((m) => { try { m.pause(); } catch (_) {} });
   body.innerHTML = '';
+  PV.load++;
+  releasePreview();
   PV.items = [];
   PV.index = 0;
+  PV.wrap = false;
   resetView(false);
   closeDialog('previewDialog');
 }

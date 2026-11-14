@@ -1,5 +1,4 @@
-class GithubFileItem {
-  final String name;
+class GithubFileItem {  final String name;
   final String path;
   final String sha;
   final int size;
@@ -28,4 +27,16 @@ class GithubFileItem {
         downloadUrl: json['download_url'] as String?,
         htmlUrl: json['html_url'] as String?,
       );
+}
+
+String formatBytes(int size) {
+  if (size < 1024) return '$size B';
+  const units = ['KB', 'MB', 'GB'];
+  var value = size / 1024;
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return '${value >= 10 ? value.round() : value.toStringAsFixed(1)} ${units[unit]}';
 }

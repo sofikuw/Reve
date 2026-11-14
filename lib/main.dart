@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/reve_provider.dart';
+import 'services/dns_fallback.dart';
 import 'ui/screens/explorer_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  installDnsFallback();
   await Hive.initFlutter(kIsWeb ? null : 'reve');
 
   runApp(

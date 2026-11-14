@@ -18,11 +18,8 @@ class AccountsScreen extends StatefulWidget {
 }
 
 class _AccountsScreenState extends State<AccountsScreen> {
-  final _tokenController = TextEditingController();
   final _clientIdController = TextEditingController();
   final _backendController = TextEditingController();
-  bool _obscure = true;
-  String _mode = 'pat';
 
   @override
   void initState() {
@@ -34,7 +31,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
 
   @override
   void dispose() {
-    _tokenController.dispose();
     _clientIdController.dispose();
     _backendController.dispose();
     super.dispose();
@@ -112,67 +108,13 @@ class _AccountsScreenState extends State<AccountsScreen> {
               );
             }),
           const SizedBox(height: 18),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'pat', label: Text('Personal token'), icon: Icon(Icons.key)),
-              ButtonSegment(value: 'oauth', label: Text('OAuth'), icon: Icon(Icons.login)),
-            ],
-            selected: {_mode},
-            onSelectionChanged: (v) => setState(() => _mode = v.first),
-          ),
-          const SizedBox(height: 16),
-          if (_mode == 'pat') _buildPat(cs) else _buildOAuth(cs),
+          _buildSignIn(cs),
         ],
       ),
     );
   }
 
-  Widget _buildPat(ColorScheme cs) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _tokenController,
-          obscureText: _obscure,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: InputDecoration(
-            labelText: 'Personal access token',
-            hintText: 'ghp_… or github_pat_…',
-            border: const OutlineInputBorder(),
-            suffixIcon: IconButton(
-              icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-              onPressed: () => setState(() => _obscure = !_obscure),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Needs the repo scope (classic) or Contents: read & write (fine-grained).',
-          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-        ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            icon: const Icon(Icons.open_in_new, size: 16),
-            label: const Text('Create a token on GitHub'),
-            onPressed: () => launchUrl(
-              Uri.parse('https://github.com/settings/tokens/new?scopes=repo&description=reve'),
-              mode: LaunchMode.externalApplication,
-            ),
-          ),
-        ),
-        const SizedBox(height: 6),
-        FilledButton.icon(
-          onPressed: () => _submitToken(_tokenController.text.trim(), 'pat'),
-          icon: const Icon(Icons.key),
-          label: const Text('Connect with token'),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOAuth(ColorScheme cs) {
+  Widget _buildSignIn(ColorScheme cs) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -227,23 +169,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
         ),
       ],
     );
-  }
-
-  Future<void> _submitToken(String token, String type) async {
-    if (token.isEmpty) {
-      _snack('Enter a token first');
-      return;
-    }
-    final provider = context.read<ReveProvider>();
-    final ok = await provider.addAccount(token, type);
-    if (!mounted) return;
-    if (ok) {
-      _tokenController.clear();
-      _snack('Connected as @${provider.activeAccount?.username ?? ''}');
-      Navigator.of(context).maybePop();
-    } else {
-      _snack(provider.errorMessage ?? 'Could not connect');
-    }
   }
 
   Future<void> _startDeviceFlow() async {
@@ -466,8 +391,8 @@ class _EmptyAccounts extends StatelessWidget {
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(
-            'Use a personal access token — it is the fastest route and '
-            'needs no backend.',
+            'Sign in with GitHub — the code is copied to your clipboard, '
+            'so there is no token to paste.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
           ),

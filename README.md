@@ -22,31 +22,51 @@ Two clients ship in this repo:
 
 - **Zero-backend** — the web client is one static `index.html`, hosted anywhere.
 - **Multi-account** — several GitHub accounts at once, switch in one tap.
-  Personal access tokens *and* OAuth (popup broker or device flow).
+  Sign-in is OAuth only: one button, a copied code, no token to paste.
+- **Downloads with progress** — the same thin bar that tracks uploads reports
+  each download byte-for-byte, on the web and in the app. Files are read through
+  the API, so private repositories work and the bar is real, not a spinner.
 - **Smart auto-sorting uploads** — files are filed into `images/`, `documents/`,
   `media/`, `archives/`, `code/`, `others/` based on extension (toggleable).
 - **Fast folder navigation** — listings are cached per branch+path, in-flight
   requests are de-duped, folders are prefetched on hover and the browser
   back/forward buttons (and a shareable `#/folder` URL) work without refetching.
-- **Rich previews** — gallery with ←/→ through the folder, pinch/wheel zoom,
-  drag-pan, rotate, Markdown and wrapped-source reading, copy path, open on
-  GitHub — for images, video, audio, PDF and text, without an extra download.
+- **Rich previews** — every file gets a viewer. Images (pinch/wheel zoom, pan,
+  swipe through the folder), Markdown, pretty-printed JSON, CSV/TSV tables,
+  fonts, source and plain text, plus a hex dump for anything else — and a save
+  card that downloads the file first when no renderer exists. Video, audio and
+  PDF open in the system app.
 - **Repository management** — create public/private repos with `auto_init`,
   switch branches, follow the default branch automatically.
 - **Full file operations** — upload (multi-file + drag and drop), download,
   create folder, rename, recursive delete, list and grid views.
 - **Device-code OAuth** — no client secret, no redirect juggling; enabled in this
   repo, works in the APK directly and on the web through the broker.
+- **Resilient networking** — Android builds retry a failed `api.github.com`
+  lookup through DNS-over-HTTPS, which fixes the `Failed host lookup` error on
+  phones whose private DNS or VPN breaks name resolution.
 - **Honest limits** — GitHub's Contents API caps a single file at 100 MB;
   `reve` warns at 95 MB before wasting an upload.
 - **Material 3** — light/dark/auto themes, responsive layout, keyboard friendly.
 
 ### Brand assets
 
-The logo lives in [`assets/`](assets): `logo.svg`/`mark.svg` (vector),
-`icon-192.png`/`icon-512.png` (app + README), `icon.png` (1024 store art) and
-`assets/android/mipmap-*/ic_launcher.png` (launcher icons, installed by the
-Android workflow right after `flutter create`).
+One artwork file is the source of truth: put the PNG at
+`assets/logo.png` (the script falls back to `assets/icon.png`) and run
+
+```bash
+python3 tools/make_icons.py
+```
+
+It resizes **those exact pixels** — no redraw, no re-trace — into
+`assets/icon.png` (1024 store art), `icon-512.png`/`icon-192.png` (app + README),
+`assets/mark.png`, `assets/android/mipmap-*/ic_launcher.png` and
+`ic_launcher_foreground.png`, the adaptive-icon XML plus its background colour
+sampled from the artwork's corners, and `web/icons/` including the maskable
+variants. Android therefore gets a proper adaptive icon, so every launcher mask
+shape (circle, squircle, rounded square) crops cleanly. The web client inlines
+the 192 px PNG as its brand mark and the 32 px one as its favicon, so
+`index.html` stays a single self-contained file.
 
 ---
 
@@ -54,7 +74,8 @@ Android workflow right after `flutter create`).
 
 1. Clone the repo or download `index.html`.
 2. Open the file, or serve it: `python3 -m http.server 8080`.
-3. Click **Add account**, paste a GitHub token, pick a repository.
+3. Click **Sign in with GitHub**, press the code that is copied for you, and
+   pick a repository.
 
 ### Host on GitHub Pages
 
@@ -78,17 +99,7 @@ See [OAuth broker](#oauth-broker-optional) for the environment variables.
 
 ## Authentication
 
-### Personal access token (fastest)
-
-Create a token at <https://github.com/settings/tokens>:
-
-- **Classic**: `repo` scope.
-- **Fine-grained**: *Repository permissions → Contents: Read and write*
-  (plus *Metadata: Read*), scoped to the repos you want to use.
-
-Paste it into the app. `reve` verifies it against `/user` and stores it locally.
-
-### OAuth
+Sign-in is **OAuth only** — there is no token box in either client.
 
 OAuth needs an OAuth App (<https://github.com/settings/developers>). The
 **client ID is public**; the **client secret never leaves your backend**.
@@ -101,6 +112,10 @@ GitHub sends no CORS headers for `/login/device/code`.
 > The broker still implements the authorization-code (`start` + callback)
 > endpoints for custom clients, but the bundled UI no longer needs them — device
 > flow requires no client secret.
+
+If you need a token without the UI (scripts, self-hosted forks), the REST API is
+unchanged: a classic token with `repo`, or a fine-grained token with
+*Contents: Read and write*, is what the OAuth flow ultimately obtains anyway.
 
 ---
 
@@ -122,8 +137,8 @@ No client secret is involved, and the client ID is stored locally after first us
 
 - **Android APK / desktop** — talks to `github.com` directly. Works out of the box.
 - **Web** — GitHub sends no CORS headers for `/login/device/code`, so the browser
-  must proxy the two calls through the broker. Until a broker URL is set in
-  **Settings**, the web client offers a personal access token instead.
+  must proxy the two calls through the broker. A default broker is baked into
+  `index.html`, so this works without any setup.
 
 ### Deploy the broker (needed once for web device flow)
 
@@ -203,9 +218,9 @@ npx wrangler secret put GITHUB_CLIENT_ID
 
 ### Wiring the web app
 
-Account dialog → **OAuth** tab → the client ID and broker URL are pre-filled;
-press *Sign in with GitHub*. Both values live in `localStorage`, so a self-hosted
-broker only needs the URL pasted in **Settings**.
+Account dialog → **Sign in with GitHub** → the client ID and broker URL are
+pre-filled; press the button. Both values live in `localStorage`, so a
+self-hosted broker only needs the URL pasted in **Settings**.
 
 Verify a deployment with
 `curl https://<broker>/api/oauth?action=health` →
@@ -231,8 +246,8 @@ Verify a deployment with
 ```bash
 flutter pub get
 flutter create --platforms=android --org com.sofikuw --project-name reve .
-# swap the Flutter launcher logo for reve's:
-for d in assets/android/mipmap-*; do cp "$d/ic_launcher.png" "android/app/src/main/res/$(basename "$d")/"; done
+# swap the Flutter launcher logo for reve's (mipmaps + adaptive-icon XML):
+cp -r assets/android/. android/app/src/main/res/
 # release builds need the permission the template omits:
 #   add <uses-permission android:name="android.permission.INTERNET"/>
 #   to android/app/src/main/AndroidManifest.xml
@@ -242,7 +257,8 @@ flutter build apk --release --dart-define=OAUTH_CLIENT_ID=Ov23liKqKI4YQP1Ie3OQ
 
 > Without that permission a release APK fails with
 > `SocketException: Failed host lookup: 'github.com'`. The CI workflow adds it
-> automatically.
+> automatically, and `lib/services/dns_fallback_io.dart` retries a lookup that
+> still fails through DNS-over-HTTPS.
 
 ### Flutter web
 
@@ -299,9 +315,11 @@ backend/cloudflare-worker/        Cloudflare Worker OAuth broker
 lib/main.dart                     Flutter entry point (Material 3)
 lib/config.dart                   --dart-define configuration
 lib/models/                       account + file models
-lib/services/github_service.dart  GitHub REST + device flow
-lib/providers/reve_provider.dart  app state (accounts, repos, files, uploads)
-lib/ui/screens/                   explorer + accounts screens
+lib/services/github_service.dart  GitHub REST, byte reads, streamed uploads
+lib/services/dns_fallback*.dart   DNS-over-HTTPS retry for native builds
+lib/providers/reve_provider.dart  app state (accounts, repos, files, progress)
+lib/ui/screens/                   explorer, accounts and preview screens
+tools/make_icons.py               regenerates every icon from one PNG
 web/                              Flutter web shell (index.html, manifest)
 .github/workflows/                APK + Flutter web builds
 ```

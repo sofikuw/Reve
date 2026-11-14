@@ -325,39 +325,97 @@ class GithubService {
     return [];
   }
 
-  static Future<String> getTextFile(
-    String token,
-    String owner,
-    String repo,
-    String path, {
+  /// Raw bytes of one file, authenticated, whatever its size.
+  ///
+  /// The Contents API refuses files over 1 MB and public raw URLs 404 on
+  /// private repositories, so this walks down: Contents (raw) → Git blobs
+  /// (base64, good to 100 MB) → public raw URL.
+  static Future<Uint8List> fetchBytes({
+    required String token,
+    required String owner,
+    required String repo,
+    required String path,
     String? branch,
+    String? sha,
+    void Function(double? fraction, int loaded)? onProgress,
   }) async {
-    final encodedPath = path.split('/').where((s) => s.isNotEmpty).map(Uri.encodeComponent).join('/');
-    var uri = '$baseUrl/repos/$owner/$repo/contents/$encodedPath';
-    if (branch != null && branch.isNotEmpty) {
-      uri += '?ref=${Uri.encodeComponent(branch)}';
-    }
+    final ref = (branch == null || branch.isEmpty) ? null : branch;
+    final contentsUri = '$baseUrl/repos/$owner/$repo/contents/${_encodePath(path)}'
+        '${ref == null ? '' : '?ref=${Uri.encodeComponent(ref)}'}';
 
-    final response = await http.get(
-      Uri.parse(uri),
-      headers: {..._headers(token), 'Accept': 'application/vnd.github.raw'},
-    );
+    final attempts = <_FetchAttempt>[
+      if (sha != null && sha.isNotEmpty)
+        _FetchAttempt('$baseUrl/repos/$owner/$repo/git/blobs/$sha', auth: true, blob: true),
+      _FetchAttempt(contentsUri, auth: true),
+      if (ref != null) _FetchAttempt(rawUrl(owner, repo, ref, path), auth: false),
+    ];
 
-    if (response.statusCode != 200) {
-      throw Exception('Could not read file: ${response.body}');
+    final client = http.Client();
+    Object? last = 'Could not read $path';
+    try {
+      for (final attempt in attempts) {
+        try {
+          final request = http.Request('GET', Uri.parse(attempt.url))
+            ..headers.addAll(attempt.auth
+                ? {
+                    ..._headers(token),
+                    'Accept': attempt.blob
+                        ? 'application/vnd.github+json'
+                        : 'application/vnd.github.raw',
+                  }
+                : const {'Accept': '*/*', 'User-Agent': 'reve-cloud-storage'});
+          final response = await client.send(request).timeout(_timeout);
+          if (response.statusCode != 200) {
+            await response.stream.drain<void>();
+            last = 'GitHub answered ${response.statusCode}';
+            continue;
+          }
+          final bytes = await _readAll(response, onProgress);
+          if (!attempt.blob) return bytes;
+
+          final data = jsonDecode(utf8.decode(bytes, allowMalformed: true));
+          final content = data is Map ? data['content'] : null;
+          if (content is! String) throw const FormatException('Unexpected blob payload');
+          return base64Decode(content.replaceAll(RegExp(r'\s'), ''));
+        } catch (error) {
+          last = error;
+        }
+      }
+    } finally {
+      client.close();
     }
-    return utf8.decode(response.bodyBytes, allowMalformed: true);
+    throw Exception(last is String ? last : networkErrorMessage(last));
+  }
+
+  static Future<Uint8List> _readAll(
+    http.StreamedResponse response,
+    void Function(double? fraction, int loaded)? onProgress,
+  ) async {
+    final total = response.contentLength ?? 0;
+    final builder = BytesBuilder(copy: false);
+    var loaded = 0;
+    await for (final chunk in response.stream) {
+      builder.add(chunk);
+      loaded += chunk.length;
+      onProgress?.call(total > 0 ? loaded / total : null, loaded);
+    }
+    return builder.takeBytes();
   }
 
   static String rawUrl(String owner, String repo, String branch, String path) {
-    final encodedPath = path.split('/').where((s) => s.isNotEmpty).map(Uri.encodeComponent).join('/');
-    return 'https://raw.githubusercontent.com/$owner/$repo/${Uri.encodeComponent(branch)}/$encodedPath';
+    return 'https://raw.githubusercontent.com/$owner/$repo/'
+        '${Uri.encodeComponent(branch)}/${_encodePath(path)}';
   }
+
+  static String _encodePath(String path) =>
+      path.split('/').where((s) => s.isNotEmpty).map(Uri.encodeComponent).join('/');
 
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
 
+  /// Uploads one file. The body is written in chunks so [onProgress] can drive
+  /// a determinate bar — `http.put` would send it all before the first report.
   static Future<void> uploadFile({
     required String token,
     required String owner,
@@ -367,23 +425,43 @@ class GithubService {
     required String message,
     String? branch,
     String? sha,
+    void Function(double fraction)? onProgress,
   }) async {
-    final encodedPath = path.split('/').where((s) => s.isNotEmpty).map(Uri.encodeComponent).join('/');
-    final body = {
+    final body = utf8.encode(jsonEncode({
       'message': message,
       'content': base64Encode(bytes),
       if (branch != null && branch.isNotEmpty) 'branch': branch,
       if (sha != null && sha.isNotEmpty) 'sha': sha,
-    };
+    }));
 
-    final response = await http.put(
-      Uri.parse('$baseUrl/repos/$owner/$repo/contents/$encodedPath'),
-      headers: {..._headers(token), 'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
+    final request = http.StreamedRequest(
+      'PUT',
+      Uri.parse('$baseUrl/repos/$owner/$repo/contents/${_encodePath(path)}'),
+    )
+      ..headers.addAll({..._headers(token), 'Content-Type': 'application/json'})
+      ..contentLength = body.length;
 
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Upload failed: ${response.body}');
+    final client = http.Client();
+    try {
+      // Fill the request before sending: a StreamedRequest buffers its sink, so
+      // the bar animates per chunk and nothing is left unhandled if `send`
+      // fails before we await it.
+      const chunkSize = 96 * 1024;
+      for (var offset = 0; offset < body.length; offset += chunkSize) {
+        final end = offset + chunkSize < body.length ? offset + chunkSize : body.length;
+        request.sink.add(body.sublist(offset, end));
+        onProgress?.call(end / body.length);
+        await Future<void>.delayed(Duration.zero);
+      }
+      await request.sink.close();
+
+      final response = await client.send(request).timeout(_timeout);
+      final text = await response.stream.bytesToString();
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception('Upload failed: $text');
+      }
+    } finally {
+      client.close();
     }
   }
 
@@ -469,4 +547,12 @@ class GithubService {
       branch: branch,
     );
   }
+}
+
+class _FetchAttempt {
+  final String url;
+  final bool auth;
+  final bool blob;
+
+  const _FetchAttempt(this.url, {this.auth = false, this.blob = false});
 }

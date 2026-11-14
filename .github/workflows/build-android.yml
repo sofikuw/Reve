@@ -38,12 +38,10 @@ jobs:
         run: flutter create --platforms=android --org com.sofikuw --project-name reve .
 
       - name: Install app icons
-        run: |
-          for d in assets/android/mipmap-*; do
-            cp "$d/ic_launcher.png" "android/app/src/main/res/$(basename "$d")/ic_launcher.png"
-          done
-          # the adaptive-icon XML points at the Flutter logo; the PNG set wins
-          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+        # assets/android holds the legacy mipmaps, the adaptive-icon foregrounds
+        # for every density, mipmap-anydpi-v26/ic_launcher.xml and the
+        # background colour, so every launcher mask shape is covered.
+        run: cp -r assets/android/. android/app/src/main/res/
 
       - name: Allow network access in release builds
         # flutter create only grants INTERNET in the debug/profile manifests, so a
