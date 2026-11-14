@@ -52,7 +52,7 @@ Two clients ship in this repo:
 ### Brand assets
 
 One artwork file is the source of truth: put the PNG at
-`assets/logo.png` (the script falls back to `assets/icon.png`) and run
+`assets/logo.png` (or `logo.jpg`; the script falls back to `assets/icon.png`) and run
 
 ```bash
 python3 tools/make_icons.py
@@ -60,8 +60,7 @@ python3 tools/make_icons.py
 
 It resizes **those exact pixels** — no redraw, no re-trace — into
 `assets/icon.png` (1024 store art), `icon-512.png`/`icon-192.png` (app + README),
-`assets/mark.png`, `assets/android/mipmap-*/ic_launcher.png` and
-`ic_launcher_foreground.png`, the adaptive-icon XML plus its background colour
+`assets/android/mipmap-*/ic_launcher.png` and `ic_launcher_foreground.png`, the adaptive-icon XML plus its background colour
 sampled from the artwork's corners, and `web/icons/` including the maskable
 variants. Android therefore gets a proper adaptive icon, so every launcher mask
 shape (circle, squircle, rounded square) crops cleanly. The web client inlines

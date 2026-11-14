@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Builds every icon from one artwork file.
 
-`assets/logo.png` is the single source of truth — drop the artwork there and
+`assets/logo.png` (or `logo.jpg`) is the single source of truth — drop the
+artwork there and
 run this; the launcher icons, the in-app logo, the web icons and the Android
 adaptive-icon foreground are all resized from those exact pixels, never
 redrawn. Falls back to the current `assets/icon.png` so the script works before
@@ -15,7 +16,10 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-ART = next(p for p in (ROOT / "assets/logo.png", ROOT / "assets/icon.png") if p.exists())
+ART = next(
+    p for p in (ROOT / "assets/logo.png", ROOT / "assets/logo.jpg", ROOT / "assets/icon.png")
+    if p.exists()
+)
 
 LEGACY = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 # Adaptive icons are 108dp; the launcher only guarantees the middle 72dp.
@@ -32,13 +36,20 @@ def square(image):
 
 def background(image):
     """The artwork's corner colour, so a masked icon never shows a seam."""
-    corners = [(0, 0), (image.width - 1, 0), (0, image.height - 1), (image.width - 1, image.height - 1)]
+    # An 8x8 patch per corner: a photo of the artwork has grain, and one pixel
+    # would tint the adaptive background a few levels off the real surface.
+    patch = 8
     total = [0, 0, 0]
-    for x, y in corners:
-        pixel = image.getpixel((x, y))
-        for i in range(3):
-            total[i] += pixel[i]
-    return tuple(value // len(corners) for value in total)
+    count = 0
+    for left in (0, image.width - patch):
+        for top in (0, image.height - patch):
+            for x in range(left, left + patch):
+                for y in range(top, top + patch):
+                    pixel = image.getpixel((x, y))
+                    for i in range(3):
+                        total[i] += pixel[i]
+                    count += 1
+    return tuple(value // count for value in total)
 
 
 def flat(image, size, fill):
@@ -51,14 +62,6 @@ def flat(image, size, fill):
     canvas.paste(art, (0, 0), art if art.mode == "RGBA" else None)
     return canvas
 
-
-def inset(image, size, scale):
-    """Transparent canvas with the artwork inside the mask's safe area."""
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    inner = max(1, int(size * scale))
-    offset = (size - inner) // 2
-    canvas.paste(image.resize((inner, inner), Image.LANCZOS), (offset, offset))
-    return canvas
 
 
 def main():
@@ -76,16 +79,15 @@ def main():
         flat(art, 1024, fill).save(assets / "icon.png")
     for name, size in (("icon-512.png", 512), ("icon-192.png", 192), ("icon-32.png", 32)):
         flat(art, size, fill).save(assets / name)
-    # 72dp of the 108dp adaptive canvas is the visible area, so 2/3 puts the
-    # artwork exactly under the mask with no square edge to crop.
-    inset(art, 512, 0.67).save(assets / "mark.png")
 
     android = assets / "android"
     for density, size in LEGACY.items():
         folder = android / f"mipmap-{density}"
         folder.mkdir(parents=True, exist_ok=True)
         flat(art, size, fill).save(folder / "ic_launcher.png")
-        inset(art, FOREGROUND[density], 2 / 3).save(folder / "ic_launcher_foreground.png")
+        # The artwork already sits inside its own padding, so the foreground
+        # is the same full-bleed pixels every mask shape crops.
+        flat(art, FOREGROUND[density], fill).save(folder / "ic_launcher_foreground.png")
 
     anydpi = android / "mipmap-anydpi-v26"
     anydpi.mkdir(parents=True, exist_ok=True)
