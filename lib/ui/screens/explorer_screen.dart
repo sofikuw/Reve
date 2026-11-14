@@ -761,7 +761,7 @@ class _GridCard extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                isDir ? 'folder' : _ExplorerScreenState.formatBytes(item.size),
+                isDir ? 'folder' : formatBytes(item.size),
                 style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
               ),
             ],
