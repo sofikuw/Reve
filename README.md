@@ -52,7 +52,7 @@ Two clients ship in this repo:
 ### Brand assets
 
 One artwork file is the source of truth: put the PNG at
-`assets/logo.png` (or `logo.jpg`; the script falls back to `assets/icon.png`) and run
+`assets/logo.png` (the script falls back to `assets/icon.png`) and run
 
 ```bash
 python3 tools/make_icons.py

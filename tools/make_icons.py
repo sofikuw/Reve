@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Builds every icon from one artwork file.
 
-`assets/logo.png` (or `logo.jpg`) is the single source of truth — drop the
-artwork there and
+`assets/logo.png` is the single source of truth — drop the artwork there and
 run this; the launcher icons, the in-app logo, the web icons and the Android
 adaptive-icon foreground are all resized from those exact pixels, never
 redrawn. Falls back to the current `assets/icon.png` so the script works before
@@ -17,7 +16,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 ART = next(
-    p for p in (ROOT / "assets/logo.png", ROOT / "assets/logo.jpg", ROOT / "assets/icon.png")
+    p for p in (ROOT / "assets/logo.png", ROOT / "assets/icon.png")
     if p.exists()
 )
 
