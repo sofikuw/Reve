@@ -231,14 +231,41 @@ Verify a deployment with
 
 ### GitHub Actions (recommended)
 
-`.github/workflows/build-android.yml` builds a release APK on every push to
-`main`, on tags, or manually from **Actions → Build Android APK → Run workflow**.
+**Actions → Release Android APKs → Run workflow** builds split APKs and
+publishes them as a GitHub release. Three inputs:
+
+| Input | Meaning |
+| --- | --- |
+| `release_channel` | `alpha`, `beta` or `stable` — alpha/beta are marked as pre-releases, stable becomes *latest* |
+| `version` | version **name**, e.g. `1.0.0`; blank uses `pubspec.yaml`. Passed as `--build-name`, so the pubspec is never edited |
+| `version_code` | Android version code; blank derives `(major*10000 + minor*100 + patch) * 10000 + rank*1000 + build` |
+
+Each run numbers itself per version **and** channel (`#001`, `#002`, …) by
+looking at the existing tags, so the release title always says which build is
+newest:
+
+```
+v1.0.0-alpha.001   release "reve 1.0.0 · alpha #001"   pre-release
+v1.0.0-alpha.002   release "reve 1.0.0 · alpha #002"   pre-release
+v1.0.0-beta.001    release "reve 1.0.0 · beta #001"    pre-release
+v1.0.0-stable.001  release "reve 1.0.0 · stable #001"  latest
+```
+
+Every release carries three APKs — install the one matching the phone's CPU:
+
+```
+reve-1.0.0-beta-001-arm64-v8a.apk     almost every phone from ~2016 on
+reve-1.0.0-beta-001-armeabi-v7a.apk   older 32-bit phones
+reve-1.0.0-beta-001-x86_64.apk        emulators and Intel tablets
+```
+
+The channel rank (alpha 0, beta 1, stable 2) is baked into the version code, so
+stable installs over beta and beta over alpha of the same version instead of
+being rejected as a downgrade.
 
 - Optional repository variable `OAUTH_CLIENT_ID` enables the device flow.
-- The APK is uploaded as the `reve-apk` artifact.
-
-> The first run generates the missing `android/` platform folder with
-> `flutter create --platforms=android .`, so nothing extra is committed.
+- The first run generates the missing `android/` platform folder with
+  `flutter create --platforms=android .`, so nothing extra is committed.
 
 ### Locally
 
