@@ -31,10 +31,14 @@ jobs:
 
       - name: Build web
         run: |
+          version=$(sed -n 's/^version: *\([0-9][^+ ]*\).*/\1/p' pubspec.yaml)
+          build=$(sed -n 's/^version: *[^+]*+\([0-9]*\).*/\1/p' pubspec.yaml)
           flutter build web --release \
             --base-href "/" \
             --dart-define=OAUTH_CLIENT_ID="${{ vars.OAUTH_CLIENT_ID }}" \
-            --dart-define=OAUTH_BACKEND="${{ vars.OAUTH_BACKEND }}"
+            --dart-define=OAUTH_BACKEND="${{ vars.OAUTH_BACKEND }}" \
+            --dart-define=APP_VERSION="${version:-1.0.0}" \
+            --dart-define=APP_BUILD="${build:-0}"
 
       - name: Upload web build
         uses: actions/upload-artifact@v4

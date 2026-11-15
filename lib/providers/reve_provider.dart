@@ -5,6 +5,7 @@ import '../config.dart';
 import '../models/account.dart';
 import '../models/file_item.dart';
 import '../services/github_service.dart';
+import '../services/updater.dart';
 
 class ReveProvider with ChangeNotifier {
   static T? _firstOrNull<T>(Iterable<T> items, bool Function(T) test) {
@@ -17,8 +18,7 @@ class ReveProvider with ChangeNotifier {
   static const String _boxName = 'reve_accounts_box';
   static const String _activeIdKey = 'active_account_id';
   static const String _autoSortKey = 'auto_sort_uploads';
-  static const String _clientIdKey = 'oauth_client_id';
-  static const String _backendKey = 'oauth_backend';
+  static const String _updateChannelKey = 'update_channel';
 
   /// GitHub's Contents API rejects anything above 100 MB. Base64 + JSON adds
   /// overhead, so stay comfortably below it.
@@ -47,8 +47,11 @@ class ReveProvider with ChangeNotifier {
   int _progressStep = -1;
   bool _autoSortUploads = true;
   int _lastRateLimit = -1;
-  String _oauthClientId = AppConfig.oauthClientId;
-  String _oauthBackend = AppConfig.deviceFlowBackend ?? '';
+  UpdateChannel _updateChannel = UpdateChannel.stable;
+  UpdateInfo? _update;
+  bool _checkingUpdate = false;
+  String? _updateError;
+  int _updateRequest = 0;
 
   List<GithubAccount> get accounts => List.unmodifiable(_accounts);
   GithubAccount? get activeAccount => _activeAccount;
@@ -68,8 +71,13 @@ class ReveProvider with ChangeNotifier {
   bool get autoSortUploads => _autoSortUploads;
   int get lastRateLimit => _lastRateLimit;
   bool get isConnected => _activeAccount != null;
-  String get oauthClientId => _oauthClientId;
-  String get oauthBackend => _oauthBackend;
+  String get oauthClientId => AppConfig.oauthClientId;
+  String get oauthBackend => AppConfig.oauthBackend;
+  UpdateChannel get updateChannel => _updateChannel;
+  bool get offersPrereleases => _updateChannel == UpdateChannel.beta;
+  UpdateInfo? get update => _update;
+  bool get checkingUpdate => _checkingUpdate;
+  String? get updateError => _updateError;
 
   String get owner =>
       (_selectedRepo?['owner']?['login'] as String?) ?? '';
@@ -89,8 +97,9 @@ class ReveProvider with ChangeNotifier {
         ..addAll((rawAccounts as List)
             .map((e) => GithubAccount.fromJson(Map<String, dynamic>.from(e as Map))));
       _autoSortUploads = box.get(_autoSortKey, defaultValue: true) as bool;
-      _oauthClientId = (box.get(_clientIdKey, defaultValue: _oauthClientId) as String?) ?? _oauthClientId;
-      _oauthBackend = (box.get(_backendKey, defaultValue: _oauthBackend) as String?) ?? _oauthBackend;
+      _updateChannel = box.get(_updateChannelKey, defaultValue: 'stable') == 'beta'
+          ? UpdateChannel.beta
+          : UpdateChannel.stable;
 
       final activeId = box.get(_activeIdKey);
       if (_accounts.isNotEmpty) {
@@ -98,6 +107,7 @@ class ReveProvider with ChangeNotifier {
       }
       notifyListeners();
       if (_activeAccount != null) await fetchRepositories();
+      await checkForUpdates();
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -113,19 +123,52 @@ class ReveProvider with ChangeNotifier {
       await box.delete(_activeIdKey);
     }
     await box.put(_autoSortKey, _autoSortUploads);
-    await box.put(_clientIdKey, _oauthClientId);
-    await box.put(_backendKey, _oauthBackend);
+    await box.put(_updateChannelKey, _updateChannel == UpdateChannel.beta ? 'beta' : 'stable');
   }
 
-  Future<void> setOAuthSettings({String? clientId, String? backend}) async {
-    if (clientId != null) {
-      _oauthClientId = clientId.trim();
+  // ---------------------------------------------------------------------------
+  // Updates
+  // ---------------------------------------------------------------------------
+
+  /// Runs on start-up and on every refresh; a failure is only reported when the
+  /// user asked for the check explicitly.
+  Future<void> checkForUpdates({bool manual = false}) async {
+    // A manual check wins over one that is already running: the newest request
+    // owns the result, and the older one is simply dropped when it returns.
+    final request = ++_updateRequest;
+    _checkingUpdate = true;
+    if (manual) _updateError = null;
+    notifyListeners();
+    try {
+      final latest = await Updater.latest(
+        channel: _updateChannel,
+        token: _activeAccount?.token,
+      );
+      if (request != _updateRequest) return;
+      final installed = UpdateInfo.installed(
+        channel: AppConfig.channel.isEmpty ? null : AppConfig.channel,
+      );
+      _update = latest != null && latest.isNewerThan(installed) ? latest : null;
+      _updateError = null;
+    } catch (e) {
+      if (request != _updateRequest) return;
+      _updateError = e.toString();
+      if (!manual) _updateError = null;
+    } finally {
+      if (request == _updateRequest) {
+        _checkingUpdate = false;
+        notifyListeners();
+      }
     }
-    if (backend != null) {
-      _oauthBackend = backend.trim().replaceAll(RegExp(r'/+$'), '');
-    }
+  }
+
+  Future<void> setUpdateChannel(UpdateChannel channel) async {
+    if (_updateChannel == channel) return;
+    _updateChannel = channel;
+    _update = null;
     await _saveToBox();
     notifyListeners();
+    await checkForUpdates(manual: true);
   }
 
   void toggleAutoSort(bool value) {
@@ -568,9 +611,19 @@ class ReveProvider with ChangeNotifier {
     }
   }
 
+  /// Headers for streamed previews: raw.githubusercontent.com accepts the same
+  /// bearer token as the API, so private repositories play too.
+  Map<String, String> get authHeaders => _activeAccount == null
+      ? const {}
+      : {'Authorization': 'Bearer ${_activeAccount!.token}'};
+
   String? downloadUrlFor(GithubFileItem item) {
     if (_selectedRepo == null) return item.downloadUrl;
-    return GithubService.rawUrl(owner, repoName, _selectedBranch ?? '', item.path);
+    final branch = _selectedBranch ??
+        (_selectedRepo!['default_branch'] as String?) ??
+        '';
+    if (branch.isEmpty) return item.downloadUrl;
+    return GithubService.rawUrl(owner, repoName, branch, item.path);
   }
 
   /// Bytes of [item] with the shared progress bar attached. Used by both the

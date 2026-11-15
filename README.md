@@ -22,7 +22,8 @@ Two clients ship in this repo:
 
 - **Zero-backend** — the web client is one static `index.html`, hosted anywhere.
 - **Multi-account** — several GitHub accounts at once, switch in one tap.
-  Sign-in is OAuth only: one button, a copied code, no token to paste.
+  Sign in with a personal access token, or with GitHub's device flow (one button,
+  a copied code, no token to paste).
 - **Downloads with progress** — the same thin bar that tracks uploads reports
   each download byte-for-byte, on the web and in the app. Files are read through
   the API, so private repositories work and the bar is real, not a spinner.
@@ -32,16 +33,19 @@ Two clients ship in this repo:
   requests are de-duped, folders are prefetched on hover and the browser
   back/forward buttons (and a shareable `#/folder` URL) work without refetching.
 - **Rich previews** — every file gets a viewer. Images (pinch/wheel zoom, pan,
-  swipe through the folder), Markdown, pretty-printed JSON, CSV/TSV tables,
-  fonts, source and plain text, plus a hex dump for anything else — and a save
-  card that downloads the file first when no renderer exists. Video, audio and
-  PDF open in the system app.
+  swipe through the folder), video and audio streamed by the platform player,
+  Markdown, pretty-printed JSON, CSV/TSV tables, fonts, source and plain text,
+  PDF, plus a hex dump for anything else. Photos, videos and songs the decoder
+  rejects still get an inline card with the format badge, size, *Save* and
+  *Open in a new tab* instead of a dump.
 - **Repository management** — create public/private repos with `auto_init`,
   switch branches, follow the default branch automatically.
 - **Full file operations** — upload (multi-file + drag and drop), download,
   create folder, rename, recursive delete, list and grid views.
 - **Device-code OAuth** — no client secret, no redirect juggling; enabled in this
   repo, works in the APK directly and on the web through the broker.
+- **In-app updates** — the APK compares itself with the published releases on
+  start-up and on every refresh, with a switch for alpha/beta builds.
 - **Resilient networking** — Android builds retry a failed `api.github.com`
   lookup through DNS-over-HTTPS, which fixes the `Failed host lookup` error on
   phones whose private DNS or VPN breaks name resolution.
@@ -98,23 +102,24 @@ See [OAuth broker](#oauth-broker-optional) for the environment variables.
 
 ## Authentication
 
-Sign-in is **OAuth only** — there is no token box in either client.
+Two ways in, both in the app and in `index.html`:
+
+1. **Personal access token.** Paste a classic token with the `repo` scope, or a
+   fine-grained token with *Contents: Read and write*, into the sign-in sheet.
+   The token never leaves the device (Hive in the app, `localStorage` in the
+   browser).
+2. **Sign in with GitHub (device flow).** One button copies an 8-character code
+   to the clipboard, opens <https://github.com/login/device> and polls until you
+   approve. Native builds talk to GitHub directly; browsers go through the
+   broker because GitHub sends no CORS headers for `/login/device/code`.
 
 OAuth needs an OAuth App (<https://github.com/settings/developers>). The
-**client ID is public**; the **client secret never leaves your backend**.
-
-Both clients use **device flow**: one button copies an 8-character code to your
-clipboard, opens <https://github.com/login/device>, and polls until you approve.
-Native builds talk to GitHub directly; browsers go through the broker because
-GitHub sends no CORS headers for `/login/device/code`.
+**client ID is public** and is baked into the build (`DEFAULT_CLIENT_ID` in
+`index.html`, `AppConfig.oauthClientId` in the app); the **client secret never
+leaves the backend**, and the device flow does not need one at all.
 
 > The broker still implements the authorization-code (`start` + callback)
-> endpoints for custom clients, but the bundled UI no longer needs them — device
-> flow requires no client secret.
-
-If you need a token without the UI (scripts, self-hosted forks), the REST API is
-unchanged: a classic token with `repo`, or a fine-grained token with
-*Contents: Read and write*, is what the OAuth flow ultimately obtains anyway.
+> endpoints for custom clients, but the bundled UI no longer needs them.
 
 ---
 
@@ -129,8 +134,9 @@ Device flow is **enabled and verified** for this deployment:
 | Actions variable | `OAUTH_CLIENT_ID` (used by both build workflows) |
 | Verified | `POST github.com/login/device/code` → user code; broker poll → `authorization_pending` |
 
-No client secret is involved, and the client ID is stored locally after first use
-(`localStorage` / Hive), so changing it needs no rebuild.
+No client secret is involved. The client ID is compile-time configuration
+(`--dart-define=OAUTH_CLIENT_ID`), so swapping OAuth Apps means rebuilding; the
+Settings sheet only holds the broker URL.
 
 ### Where it works
 
@@ -270,6 +276,21 @@ and lists it per APK in the release notes, rather than quoting the number it
 computed.
 
 - Optional repository variable `OAUTH_CLIENT_ID` enables the device flow.
+- Required repository secret `ANDROID_KEYSTORE_B64`: a base64 PKCS12 keystore
+  written to `~/.android/debug.keystore` before the build. Every release must be
+  signed with the **same** key, otherwise Android rejects the new APK over the
+  old one with "app not installed". The workflow publishes the signing
+  certificate's SHA-256 in the release notes, so a mismatch is visible at a
+  glance. Create the key once:
+
+  ```bash
+  keytool -genkeypair -keystore debug.keystore -storetype PKCS12 \
+    -storepass android -keypass android -alias androiddebugkey \
+    -keyalg RSA -keysize 2048 -validity 10950 \
+    -dname "CN=Android Debug,O=Android,C=US"
+  base64 -w0 debug.keystore   # → ANDROID_KEYSTORE_B64
+  ```
+
 - The first run generates the missing `android/` platform folder with
   `flutter create --platforms=android .`, so nothing extra is committed.
 
@@ -301,6 +322,32 @@ flutter build web --release --dart-define=OAUTH_CLIENT_ID=Iv1.xxxx \
 
 `.github/workflows/deploy-web.yml` uploads `build/web` as an artifact.
 The flagship web experience remains the root `index.html`.
+
+---
+
+## In-app updates
+
+The app knows its own version (`--dart-define=APP_VERSION` / `APP_BUILD`, baked
+in by the release workflow) and asks GitHub for the published releases on
+start-up and on every refresh. When something newer exists, a snackbar offers
+*Get it*, and the overflow menu grows an *Update …* entry.
+
+**Updates → Beta and alpha builds** switches the channel:
+
+| Switch | Sees |
+| --- | --- |
+| off | stable releases only |
+| on | alpha + beta + stable, newest of them wins |
+
+Comparison is semver first, then channel (alpha < beta < stable), then build
+number, so a stable `1.3.0` beats `1.3.0-beta.004`, which beats
+`1.3.0-alpha.004`. *Download* opens the release page in the browser; pick the
+APK that matches the phone's CPU and it installs over the current build without
+touching accounts, as long as both builds were signed with the same key (see
+`ANDROID_KEYSTORE_B64` above).
+
+`index.html` stays a single static file; the update check lives only in the
+Flutter app.
 
 ---
 

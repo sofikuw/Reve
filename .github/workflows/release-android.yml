@@ -128,6 +128,23 @@ jobs:
           print(s.split('<application')[0][-260:])
           PY
 
+      - name: Restore the release signing key
+        # Every APK signed by this job must use the same key, otherwise Android
+        # refuses to install a new build over the old one ("app not installed").
+        # The key lives in a repository secret and is written where AGP's default
+        # debug signing config looks for it.
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_B64:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE_B64 is not set — without it every run signs with a new key and upgrades break."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$HOME/.android/debug.keystore"
+          ls -l "$HOME/.android/debug.keystore"
+
       - name: Build split APKs
         # --build-name/--build-number override pubspec.yaml, so a build can carry
         # any version without editing the file.
@@ -136,7 +153,10 @@ jobs:
             --build-name="${{ steps.ver.outputs.version }}" \
             --build-number="${{ steps.ver.outputs.code }}" \
             --dart-define=OAUTH_CLIENT_ID="${{ vars.OAUTH_CLIENT_ID }}" \
-            --dart-define=OAUTH_SCOPE="${{ vars.OAUTH_SCOPE || 'repo' }}"
+            --dart-define=OAUTH_SCOPE="${{ vars.OAUTH_SCOPE || 'repo' }}" \
+            --dart-define=APP_VERSION="${{ steps.ver.outputs.version }}" \
+            --dart-define=APP_BUILD="${{ steps.ver.outputs.build }}" \
+            --dart-define=APP_CHANNEL="${{ inputs.release_channel }}"
 
       - name: Collect APKs
         run: |
@@ -158,6 +178,14 @@ jobs:
             echo "$abi $code" >> out/codes.txt
           done
           test "$(ls -1 out/*.apk | wc -l)" -eq 3
+
+          # Same fingerprint on every release is what makes an in-place upgrade
+          # work; publish it so a mismatch is visible before anyone installs.
+          apksigner=$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/apksigner | tail -1)
+          "$apksigner" verify --print-certs "$(ls out/*.apk | head -1)" > out/certs.txt
+          grep 'SHA-256' out/certs.txt | sed 's/^.*: //' > out/fingerprint.txt
+          cat out/fingerprint.txt
+
           ls -lh out
           cat out/codes.txt
 
@@ -185,6 +213,7 @@ jobs:
               esac
               printf '| `%s` | `%s` | %s |\n' "$abi" "$code" "$use"
             done < out/codes.txt
+            printf '\nSigning certificate SHA-256: `%s`\n' "$(cat out/fingerprint.txt)"
           } > notes.md
 
           flags=(--title "reve $version · $CHANNEL #$build" --notes-file notes.md --generate-notes)

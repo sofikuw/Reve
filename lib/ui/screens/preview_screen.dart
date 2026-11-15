@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../models/file_item.dart';
 import '../../providers/reve_provider.dart';
@@ -135,7 +136,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
   static String kindOf(String name) {
     final dot = name.lastIndexOf('.');
     final ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
-    const images = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif'};
+    const images = {
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'heic', 'heif',
+      'tif', 'tiff',
+    };
+    // Everything the platform decoder can stream: ExoPlayer handles mp4/m4v/mov,
+    // webm, mkv, 3gp and ts video, plus mp3, aac/m4a, flac, ogg/opus, wav, amr.
+    const videos = {'mp4', 'm4v', 'mov', 'webm', 'mkv', 'ogv', '3gp', 'ts', 'm2ts', 'mpd', 'avi', 'wmv', 'flv'};
+    const audios = {'mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'm4a', 'aac', 'amr', 'wma', 'mid', 'm4b'};
     const markdown = {'md', 'markdown', 'mdx'};
     const json = {'json', 'jsonc', 'geojson'};
     const tables = {'csv', 'tsv'};
@@ -148,6 +156,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
       'gitignore', 'editorconfig', 'properties', 'gradle', 'lock', 'svg',
     };
     if (images.contains(ext)) return 'image';
+    if (videos.contains(ext)) return 'video';
+    if (audios.contains(ext)) return 'audio';
     if (markdown.contains(ext)) return 'markdown';
     if (json.contains(ext)) return 'json';
     if (tables.contains(ext)) return 'table';
@@ -158,6 +168,8 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   static IconData iconFor(String kind) => switch (kind) {
         'image' => Icons.image_outlined,
+        'video' => Icons.movie_outlined,
+        'audio' => Icons.audiotrack,
         'markdown' => Icons.article_outlined,
         'json' => Icons.data_object,
         'table' => Icons.table_chart_outlined,
@@ -172,6 +184,17 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   Widget _page(GithubFileItem item) {
     final kind = kindOf(item.name);
+    // Audio and video are streamed, never buffered: a 300 MB film would blow
+    // through memory long before it played.
+    if (kind == 'video' || kind == 'audio') {
+      return _MediaPreview(
+        item: item,
+        audioOnly: kind == 'audio',
+        url: widget.provider.downloadUrlFor(item),
+        headers: widget.provider.authHeaders,
+        onSave: () => _save(item),
+      );
+    }
     if (item.size > _maxPreviewBytes) {
       return _fileCard(
         item,
@@ -209,7 +232,13 @@ class _PreviewScreenState extends State<PreviewScreen> {
             bytes,
             fit: BoxFit.contain,
             filterQuality: FilterQuality.medium,
-            errorBuilder: (context, error, stack) => _binary(item, bytes),
+            errorBuilder: (context, error, stack) => _fileCard(
+              item,
+              icon: Icons.broken_image_outlined,
+              title: 'No decoder for this image',
+              body: '${formatBytes(item.size)} — Flutter cannot decode this '
+                  'format here. Save it and open it with your gallery.',
+            ),
           ),
         ),
       );
@@ -640,5 +669,240 @@ class _PreviewScreenState extends State<PreviewScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+/// Streams the file through the platform player, so audio and video open
+/// inside reve instead of landing in a hex dump. The URL is the raw GitHub
+/// blob with the account token attached, which also covers private repos.
+class _MediaPreview extends StatefulWidget {
+  const _MediaPreview({
+    required this.item,
+    required this.audioOnly,
+    required this.url,
+    required this.headers,
+    required this.onSave,
+  });
+
+  final GithubFileItem item;
+  final bool audioOnly;
+  final String? url;
+  final Map<String, String> headers;
+  final Future<void> Function() onSave;
+
+  @override
+  State<_MediaPreview> createState() => _MediaPreviewState();
+}
+
+class _MediaPreviewState extends State<_MediaPreview> {
+  VideoPlayerController? _controller;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final url = widget.url;
+    if (url == null || url.isEmpty) {
+      setState(() => _error = 'No download URL for this file.');
+      return;
+    }
+    final controller = VideoPlayerController.networkUrl(
+      Uri.parse(url),
+      httpHeaders: widget.headers,
+    );
+    try {
+      await controller.initialize();
+      try {
+        await controller.play();
+      } catch (_) {
+        // Autoplay policies can refuse to start; the controls still work.
+      }
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() => _controller = controller);
+    } catch (error) {
+      await controller.dispose();
+      if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final controller = _controller;
+    if (_error != null) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(widget.audioOnly ? Icons.music_off : Icons.videocam_off_outlined,
+                  size: 44, color: cs.onSurfaceVariant),
+              const SizedBox(height: 14),
+              const Text('This format does not play here',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Text(
+                  '${widget.item.name} — ${widget.item.size > 0 ? formatBytes(widget.item.size) : 'unknown size'}. '
+                  'The player rejected it, so save it and open it with an app that '
+                  'supports this codec.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, height: 1.6, color: cs.onSurfaceVariant),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: () => widget.onSave(),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Save file'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (controller == null) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+
+    if (widget.audioOnly) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 132,
+                height: 132,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [cs.primaryContainer, cs.secondaryContainer],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(32),
+                ),
+                child: Icon(Icons.graphic_eq, size: 56, color: cs.onPrimaryContainer),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                widget.item.name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                formatBytes(widget.item.size),
+                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(width: 340, child: _controls(controller)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: ColoredBox(
+            color: Colors.black,
+            child: Center(
+              child: AspectRatio(
+                // Audio-only mp4 files report 0, which AspectRatio rejects.
+                aspectRatio: controller.value.aspectRatio > 0
+                    ? controller.value.aspectRatio
+                    : 16 / 9,
+                child: VideoPlayer(controller),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(top: false, child: _controls(controller)),
+      ],
+    );
+  }
+
+  Widget _controls(VideoPlayerController controller) {
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (context, value, _) {
+        final total = value.duration.inMilliseconds;
+        final position = value.position.inMilliseconds > total ? total : value.position.inMilliseconds;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Slider(
+                value: total == 0 ? 0 : (position / total).clamp(0.0, 1.0),
+                onChanged: total == 0
+                    ? null
+                    : (fraction) => controller
+                        .seekTo(Duration(milliseconds: (fraction * total).round())),
+              ),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: value.isPlaying ? 'Pause' : 'Play',
+                    icon: Icon(value.isPlaying ? Icons.pause : Icons.play_arrow),
+                    onPressed: () => value.isPlaying ? controller.pause() : controller.play(),
+                  ),
+                  Text(
+                    '${_clock(value.position)} / ${_clock(value.duration)}',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const Spacer(),
+                  if (value.isBuffering)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  IconButton(
+                    tooltip: value.volume == 0 ? 'Unmute' : 'Mute',
+                    icon: Icon(value.volume == 0 ? Icons.volume_off : Icons.volume_up),
+                    onPressed: () => controller.setVolume(value.volume == 0 ? 1 : 0),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static String _clock(Duration value) {
+    final seconds = value.inSeconds % 60;
+    return '${value.inMinutes}:${seconds.toString().padLeft(2, '0')}';
   }
 }

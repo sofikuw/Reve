@@ -378,6 +378,19 @@ dialog.wide .dialog-card { height: 86dvh; }
 .preview-body audio { width: min(560px, 90%); }
 .preview-body iframe { width: 100%; height: 100%; border: none; background: #fff; }
 .pv-note { max-width: 540px; padding: 28px; text-align: center; font-size: 13px; line-height: 1.6; color: var(--on-surface-variant); }
+.pv-audio { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px; }
+.pv-audio b { font-size: 14px; font-weight: 600; }
+.pv-audio-art { width: 132px; height: 132px; border-radius: 32px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--primary-container), var(--secondary-container)); color: var(--on-primary-container); }
+.pv-fallback { max-width: 460px; padding: 30px 28px; text-align: center; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; font-size: 13px; line-height: 1.6; color: var(--on-surface-variant); }
+.pv-fallback b { font-size: 14px; font-weight: 600; color: var(--on-surface); word-break: break-word; }
+.pv-fallback-badge { position: relative; width: 96px; height: 96px; margin-bottom: 10px; border-radius: 26px;
+  display: grid; place-items: center; color: var(--primary);
+  background: color-mix(in srgb, var(--primary-container) 62%, transparent); }
+.pv-fallback-badge span { position: absolute; bottom: 8px; font-size: 10px; font-weight: 700;
+  letter-spacing: .08em; color: var(--on-primary-container); }
+.pv-fallback-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
 .pv-note b { color: var(--on-surface); }
 .pv-table { flex: 1 1 100%; align-self: stretch; height: 100%; overflow: auto; }
 .pv-table table { border-collapse: collapse; font-size: 12px; min-width: 100%; }
@@ -626,11 +639,17 @@ dialog.wide .dialog-card { height: 86dvh; }
 
       <div id="oauthPane">
         <div class="field">
-          <label for="clientIdInput">GitHub OAuth App client ID</label>
-          <input class="input" id="clientIdInput" placeholder="Iv1.…" autocomplete="off">
-          <div class="help">Client ID of your OAuth App (no secret is ever used by the browser). Pre-filled with this deployment's app — clear it to disable.</div>
+          <label for="patInput">Personal access token</label>
+          <input class="input" id="patInput" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off" onkeydown="if(event.key==='Enter')usePatToken()">
+          <div class="help">Classic token with the <b>repo</b> scope, or a fine-grained token with Contents: read and write. It stays in this browser.</div>
         </div>
-        <button class="btn filled" style="width:100%;margin-bottom:8px" onclick="startDeviceFlow()">
+        <button class="btn filled" style="width:100%;margin-bottom:8px" onclick="usePatToken()">
+          <svg class="i i-18"><use href="#i-check"/></svg> Use token
+        </button>
+        <div class="help" style="margin-bottom:14px">
+          <a href="https://github.com/settings/tokens/new?scopes=repo&amp;description=reve" target="_blank" rel="noopener">Create a token on GitHub</a>
+        </div>
+        <button class="btn tonal" style="width:100%;margin-bottom:8px" onclick="startDeviceFlow()">
           <svg class="i i-18"><use href="#i-login"/></svg> Sign in with GitHub
         </button>
         <div class="help" style="margin-bottom:12px">
@@ -710,10 +729,6 @@ dialog.wide .dialog-card { height: 86dvh; }
         <input class="input" id="backendInput" placeholder="https://reve-oauth.example.workers.dev" autocomplete="off">
         <div class="help">Leave empty to use this site's own origin (works when deployed to Vercel with the bundled <code>api/oauth.js</code>).</div>
       </div>
-      <div class="field">
-        <label for="defaultClientInput">Default OAuth client ID</label>
-        <input class="input" id="defaultClientInput" placeholder="Iv1.…" autocomplete="off">
-      </div>
       <div class="notice">
         <svg class="i i-18"><use href="#i-info"/></svg>
         <span>Sign-in goes through the OAuth broker below. See <b>README → OAuth backend</b> for the two-minute deployment steps.</span>
@@ -768,7 +783,6 @@ const LS = {
   theme: 'reve.theme',
   view: 'reve.view',
   backend: 'reve.backend',
-  clientId: 'reve.clientId',
 };
 
 const S = {
@@ -1066,6 +1080,23 @@ async function verifyToken(token) {
   };
 }
 
+async function usePatToken() {
+  const input = $('patInput');
+  const token = input.value.trim();
+  if (!token) return snack('Paste a personal access token first', true);
+  setBusy(true, 'Checking token…');
+  try {
+    const account = await verifyToken(token);
+    await addVerifiedAccount(account, 'PAT');
+    input.value = '';
+    closeDialog('accountsDialog');
+  } catch (e) {
+    snack(`GitHub rejected that token: ${e.message}`, true);
+  } finally {
+    setBusy(false);
+  }
+}
+
 async function addVerifiedAccount(account, type) {
   account.type = type;
   account.addedAt = new Date().toISOString();
@@ -1086,9 +1117,7 @@ function backendBase() {
 }
 
 function oauthClientId() {
-  return ($('clientIdInput') && $('clientIdInput').value.trim())
-    || localStorage.getItem(LS.clientId)
-    || DEFAULT_CLIENT_ID;
+  return DEFAULT_CLIENT_ID;
 }
 
 /* ------------------------------------------------------------
@@ -1107,8 +1136,7 @@ function stopDeviceFlow(notify) {
 
 async function startDeviceFlow() {
   const clientId = oauthClientId();
-  if (!clientId) return snack('Add your OAuth App client ID in the field above', true);
-  localStorage.setItem(LS.clientId, clientId);
+  if (!clientId) return snack('This deployment has no OAuth client ID', true);
 
   const base = backendBase();
   if (location.protocol === 'file:') {
@@ -1245,7 +1273,7 @@ function copyDeviceCode() {
 function renderAccounts() {
   const list = $('acctList');
   if (!S.accounts.length) {
-    list.innerHTML = `<div class="notice">${icon('info', 'i-18')}<span>No account connected yet. Sign in with GitHub below — the code is copied to your clipboard, no token to paste.</span></div>`;
+    list.innerHTML = `<div class="notice">${icon('info', 'i-18')}<span>No account connected yet. Paste a personal access token below, or sign in with GitHub and let the device code do the handshake.</span></div>`;
     return;
   }
   list.innerHTML = S.accounts.map((a) => `
@@ -1253,7 +1281,7 @@ function renderAccounts() {
       <span class="avatar avatar-text" data-avatar="${esc(a.avatar)}" data-login="${esc(a.login)}"></span>
       <span class="who">
         <b>${esc(a.name || a.login)}</b>
-        <span>@${esc(a.login)} · OAuth · token ${esc(a.token.slice(0, 4))}…${esc(a.token.slice(-4))}</span>
+        <span>@${esc(a.login)} · ${esc(a.type || 'OAuth')} · token ${esc(a.token.slice(0, 4))}…${esc(a.token.slice(-4))}</span>
       </span>
       ${a.id === S.activeId
         ? `<span class="badge">Active</span>`
@@ -1304,21 +1332,17 @@ async function onAccountChanged() {
 function openAccounts() {
   stopDeviceFlow(false);
   renderAccounts();
-  $('clientIdInput').value = localStorage.getItem(LS.clientId) || DEFAULT_CLIENT_ID;
   openDialog('accountsDialog');
 }
 
 function openConfig() {
   $('backendInput').value = localStorage.getItem(LS.backend) || '';
-  $('defaultClientInput').value = localStorage.getItem(LS.clientId) || DEFAULT_CLIENT_ID;
   openDialog('configDialog');
 }
 
 function saveConfig() {
   const b = $('backendInput').value.trim().replace(/\/+$/, '');
-  const c = $('defaultClientInput').value.trim();
   if (b) localStorage.setItem(LS.backend, b); else localStorage.removeItem(LS.backend);
-  if (c) localStorage.setItem(LS.clientId, c); else localStorage.removeItem(LS.clientId);
   closeDialog('configDialog');
   snack('Settings saved');
 }
@@ -2123,9 +2147,12 @@ async function downloadEntry(path, name) {
 const PV = { items: [], index: 0, zoom: 1, rot: 0, panX: 0, panY: 0, wrap: false, url: null, load: 0 };
 
 const PV_TYPES = {
-  image: ['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif','tif','tiff'],
-  video: ['mp4','webm','ogv','mov','m4v','mkv'],
-  audio: ['mp3','wav','ogg','flac','m4a','aac','opus'],
+  image: ['png','jpg','jpeg','gif','webp','svg','bmp','ico','avif','tif','tiff','heic','heif',
+    'jxl','jp2','j2k','psd'],
+  video: ['mp4','webm','ogv','mov','m4v','mkv','3gp','3g2','ts','m2ts','mts','avi','wmv','flv',
+    'mpg','mpeg','mpe','mpd','m3u8','asf','vob','f4v'],
+  audio: ['mp3','wav','ogg','oga','flac','m4a','m4b','aac','opus','weba','amr','wma','mid','midi',
+    'aif','aiff','aifc','caf','ape','wv','ac3','dts'],
   pdf: ['pdf'],
   markdown: ['md','markdown','mdx'],
   json: ['json','jsonc','geojson'],
@@ -2226,16 +2253,30 @@ async function renderPreview(type, name, blob, item, token) {
 
   if (type === 'image') {
     body.innerHTML = `<div class="pv-stage" id="pvStage"><img id="pvImg" alt="${esc(name)}" src="${url}"></div>`;
+    const img = $('pvImg');
+    img.addEventListener('error', () => {
+      if (token !== PV.load) return;
+      body.innerHTML = mediaFallback('image', name, blob, item);
+    }, { once: true });
     bindStage();
     applyView();
     return;
   }
-  if (type === 'video') {
-    body.innerHTML = `<video controls autoplay playsinline src="${url}"></video>`;
-    return;
-  }
-  if (type === 'audio') {
-    body.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
+  if (type === 'video' || type === 'audio') {
+    body.innerHTML = type === 'video'
+      ? `<video controls autoplay playsinline preload="metadata" src="${url}"></video>`
+      : `<div class="pv-audio"><div class="pv-audio-art">${icon('audio', 'i-40')}</div>
+          <b>${esc(name)}</b><span class="pv-meta">${fmtSize(blob.size)}</span>
+          <audio controls autoplay preload="metadata" src="${url}"></audio></div>`;
+    const player = body.querySelector('video, audio');
+    // `error` fires on the element when no decoder exists for the container or
+    // codec; some browsers only report it on a child <source>, so listen there too.
+    const fail = () => {
+      if (token !== PV.load) return;
+      body.innerHTML = mediaFallback(type, name, blob, item);
+    };
+    player.addEventListener('error', fail, { once: true });
+    player.querySelectorAll('source').forEach((el) => el.addEventListener('error', fail, { once: true }));
     return;
   }
   if (type === 'pdf') {
@@ -2291,6 +2332,26 @@ async function renderPreview(type, name, blob, item, token) {
     <p class="pv-meta" style="margin:0 0 14px">No inline viewer for this format — ${fmtSize(blob.size)}. Here is the first ${fmtSize(hex.length)}:
       <button class="btn tonal small" style="margin-left:8px" onclick="downloadEntry('${esc(item.path).replace(/'/g, "\\'")}')">${icon('download', 'i-14')} Download</button></p>
     <pre>${esc(hex)}</pre></div>`;
+}
+
+/* What to show for a photo, video or song the browser cannot decode. It keeps
+   the file in the dialog: format badge, size, and the two ways out — play it
+   with another app, or save it. */
+function mediaFallback(kind, name, blob, item) {
+  const ext = (extOf(name) || 'file').toUpperCase();
+  const iconId = kind === 'image' ? 'image' : kind === 'video' ? 'video' : 'audio';
+  const what = kind === 'image' ? 'photo' : kind === 'video' ? 'video' : 'audio track';
+  return `<div class="pv-fallback">
+    <div class="pv-fallback-badge">${icon(iconId, 'i-40')}<span>${esc(ext)}</span></div>
+    <b>${esc(name)}</b>
+    <p class="pv-meta" style="margin:4px 0 0">${fmtSize(blob.size)} · this browser has no ${esc(ext)} decoder for a ${what}.</p>
+    <div class="pv-fallback-actions">
+      <button class="btn filled small" data-path="${esc(item.path)}" onclick="downloadEntry(this.dataset.path)">${icon('download', 'i-14')} Save file</button>
+      <a class="btn tonal small" href="${PV.url}" download="${esc(name)}">${icon('external', 'i-14')} Open in a new tab</a>
+      <a class="btn text small" href="${githubBlobUrl(item.path)}" target="_blank" rel="noopener">${icon('external', 'i-14')} GitHub</a>
+    </div>
+    <p class="pv-meta" style="margin-top:12px">Saving it hands the file to your gallery or player, which usually supports ${esc(ext)} even when the browser does not.</p>
+  </div>`;
 }
 
 function fileTooBigForMobile(blob) {

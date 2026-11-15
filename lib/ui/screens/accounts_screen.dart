@@ -18,21 +18,12 @@ class AccountsScreen extends StatefulWidget {
 }
 
 class _AccountsScreenState extends State<AccountsScreen> {
-  final _clientIdController = TextEditingController();
-  final _backendController = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    final provider = context.read<ReveProvider>();
-    _clientIdController.text = provider.oauthClientId;
-    _backendController.text = provider.oauthBackend;
-  }
+  final _tokenController = TextEditingController();
+  bool _showToken = false;
 
   @override
   void dispose() {
-    _clientIdController.dispose();
-    _backendController.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
@@ -119,44 +110,77 @@ class _AccountsScreenState extends State<AccountsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TextField(
-          controller: _clientIdController,
+          controller: _tokenController,
           autocorrect: false,
           enableSuggestions: false,
-          decoration: const InputDecoration(
-            labelText: 'OAuth App client ID',
-            hintText: 'Iv1.…',
-            border: OutlineInputBorder(),
+          obscureText: !_showToken,
+          onSubmitted: (_) => _useToken(),
+          decoration: InputDecoration(
+            labelText: 'Personal access token',
+            hintText: 'ghp_… or github_pat_…',
+            border: const OutlineInputBorder(),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: _showToken ? 'Hide' : 'Show',
+                  icon: Icon(_showToken ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                  onPressed: () => setState(() => _showToken = !_showToken),
+                ),
+                IconButton(
+                  tooltip: 'Paste',
+                  icon: const Icon(Icons.content_paste),
+                  onPressed: () async {
+                    final data = await Clipboard.getData(Clipboard.kTextPlain);
+                    final text = data?.text?.trim();
+                    if (text == null || text.isEmpty) return;
+                    setState(() => _tokenController.text = text);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Device flow only needs the public client ID — enable "Device flow" '
-          'on the OAuth App. The client secret never ships in the app.',
+          'A classic token with the repo scope, or a fine-grained token with '
+          'Contents: read and write. It is stored on this device only.',
           style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
         ),
-        const SizedBox(height: 14),
-        if (kIsWeb) ...[
-          TextField(
-            controller: _backendController,
-            autocorrect: false,
-            enableSuggestions: false,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'OAuth broker URL',
-              hintText: 'https://reve-oauth.you.workers.dev',
-              border: OutlineInputBorder(),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _useToken,
+                icon: const Icon(Icons.key_outlined),
+                label: const Text('Use token'),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Browsers cannot call the device endpoint directly (CORS), so the '
-            'GitHub calls are proxied through your broker. Same broker as the '
-            'popup flow — no secret needed for device codes.',
-            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-          ),
-          const SizedBox(height: 12),
-        ],
-        FilledButton.icon(
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse('https://github.com/settings/tokens/new?scopes=repo&description=reve'),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('Create'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(child: Divider(color: cs.outlineVariant)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text('or', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+            ),
+            Expanded(child: Divider(color: cs.outlineVariant)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        FilledButton.tonalIcon(
           onPressed: _startDeviceFlow,
           icon: const Icon(Icons.login),
           label: const Text('Sign in with GitHub'),
@@ -171,20 +195,36 @@ class _AccountsScreenState extends State<AccountsScreen> {
     );
   }
 
+  Future<void> _useToken() async {
+    final token = _tokenController.text.trim();
+    if (token.isEmpty) {
+      _snack('Paste a personal access token first');
+      return;
+    }
+    final provider = context.read<ReveProvider>();
+    final ok = await provider.addAccount(token, 'pat');
+    if (!mounted) return;
+    if (!ok) {
+      _snack(provider.errorMessage ?? 'Could not connect');
+      return;
+    }
+    _tokenController.clear();
+    _snack('Connected as @${provider.activeAccount?.username ?? ''}');
+    Navigator.of(context).maybePop();
+  }
+
   Future<void> _startDeviceFlow() async {
-    final clientId = _clientIdController.text.trim();
-    final backend = _backendController.text.trim();
+    final provider = context.read<ReveProvider>();
+    final clientId = provider.oauthClientId;
+    final backend = provider.oauthBackend;
     if (clientId.isEmpty) {
-      _snack('Add your OAuth App client ID first');
+      _snack('This build has no OAuth client ID baked in');
       return;
     }
     if (kIsWeb && backend.isEmpty) {
-      _snack('Add your OAuth broker URL — browsers need it for device codes');
+      _snack('This build has no OAuth broker baked in');
       return;
     }
-
-    final provider = context.read<ReveProvider>();
-    await provider.setOAuthSettings(clientId: clientId, backend: backend);
 
     DeviceAuthorization auth;
     try {
@@ -350,9 +390,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
         lower.contains('connection abort');
 
     if (networkish) {
-      if (kIsWeb && _backendController.text.trim().isEmpty) {
-        return 'Browser sign-in needs the OAuth broker: deploy api/oauth.js to '
-            'Vercel or the Cloudflare Worker, then paste its URL under Settings.';
+      if (kIsWeb && AppConfig.oauthBackend.isEmpty) {
+        return 'Browser sign-in needs an OAuth broker: deploy api/oauth.js to '
+            'Vercel or the Cloudflare Worker and pass it as OAUTH_BACKEND.';
       }
       return GithubService.networkErrorMessage(error);
     }
@@ -391,8 +431,8 @@ class _EmptyAccounts extends StatelessWidget {
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Text(
-            'Sign in with GitHub — the code is copied to your clipboard, '
-            'so there is no token to paste.',
+            'Paste a personal access token, or sign in with GitHub and let the '
+            'device code do the handshake for you.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
           ),

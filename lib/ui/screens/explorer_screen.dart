@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../config.dart';
 import '../../models/file_item.dart';
 import '../../providers/reve_provider.dart';
+import '../../services/updater.dart';
 import 'accounts_screen.dart';
 import 'preview_screen.dart';
 
@@ -19,8 +21,40 @@ class ExplorerScreen extends StatefulWidget {
 
 class _ExplorerScreenState extends State<ExplorerScreen> {
   bool _grid = false;
+  bool _announcedUpdate = false;
 
   ReveProvider get _provider => context.read<ReveProvider>();
+
+  @override
+  void initState() {
+    super.initState();
+    // The provider checks on start-up; this only surfaces the result once.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _provider.addListener(_announceUpdate);
+      _announceUpdate();
+    });
+  }
+
+  @override
+  void dispose() {
+    _provider.removeListener(_announceUpdate);
+    super.dispose();
+  }
+
+  void _announceUpdate() {
+    if (!mounted || _announcedUpdate) return;
+    final update = _provider.update;
+    if (update == null) return;
+    _announcedUpdate = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('reve ${update.label} is available'),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(label: 'Get it', onPressed: _openUpdates),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +94,10 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             onSelected: (value) {
               if (value == 'repo') _createRepository();
               if (value == 'accounts') _openAccounts();
+              if (value == 'updates') _openUpdates();
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
                 value: 'repo',
                 child: ListTile(
                   leading: Icon(Icons.create_new_folder_outlined),
@@ -70,11 +105,24 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
-              PopupMenuItem(
+              const PopupMenuItem(
                 value: 'accounts',
                 child: ListTile(
                   leading: Icon(Icons.manage_accounts_outlined),
                   title: Text('Accounts'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'updates',
+                child: ListTile(
+                  leading: Icon(
+                    provider.update == null ? Icons.system_update_alt : Icons.new_releases,
+                    color: provider.update == null ? null : cs.primary,
+                  ),
+                  title: Text(provider.update == null
+                      ? 'Check for updates'
+                      : 'Update ${provider.update!.label}'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -212,7 +260,10 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             tooltip: 'Refresh',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.refresh, size: 20),
-            onPressed: provider.fetchContents,
+            onPressed: () {
+              provider.fetchContents();
+              provider.checkForUpdates();
+            },
           ),
         ],
       ),
@@ -658,6 +709,123 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountsScreen()));
   }
 
+  /// One place for "what am I running", the beta switch and the download.
+  Future<void> _openUpdates() async {
+    final provider = context.read<ReveProvider>();
+    final opening = provider.checkForUpdates(manual: true);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => ListenableBuilder(
+        listenable: provider,
+        builder: (context, _) {
+          final update = provider.update;
+          final cs = Theme.of(context).colorScheme;
+          return AlertDialog(
+            title: const Text('Updates'),
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      AppConfig.build > 0
+                          ? 'Installed: reve ${AppConfig.version} · build ${AppConfig.build}'
+                          : 'Installed: reve ${AppConfig.version}',
+                      style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Beta and alpha builds'),
+                      subtitle: const Text('Off: stable releases only'),
+                      value: provider.offersPrereleases,
+                      onChanged: (value) => provider.setUpdateChannel(
+                        value ? UpdateChannel.beta : UpdateChannel.stable,
+                      ),
+                    ),
+                    if (provider.checkingUpdate)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: LinearProgressIndicator(minHeight: 3),
+                      ),
+                    if (provider.updateError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Could not check: ${provider.updateError}',
+                          style: TextStyle(fontSize: 12, color: cs.error),
+                        ),
+                      ),
+                    if (!provider.checkingUpdate && update == null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          provider.updateError == null
+                              ? 'Up to date.'
+                              : 'Try again when you are online.',
+                          style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    if (update != null) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('reve ${update.label}',
+                                style: const TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 6),
+                            Text(
+                              update.notes.trim().isEmpty
+                                  ? 'New build published.'
+                                  : update.notes.trim(),
+                              maxLines: 6,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, height: 1.5, color: cs.onSurfaceVariant),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Pick the APK for your phone\'s CPU on the release page; '
+                              'it installs over this build without losing accounts.',
+                              style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Close'),
+              ),
+              if (update != null)
+                FilledButton.icon(
+                  onPressed: () => launchUrl(
+                    Uri.parse(update.pageUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Download'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+    await opening;
+  }
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -666,11 +834,22 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     if (item.isDirectory) return 'dir';
     final dot = item.name.lastIndexOf('.');
     final ext = dot > 0 ? item.name.substring(dot + 1).toLowerCase() : '';
-    if (const {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'}.contains(ext)) {
+    if (const {
+      'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif',
+      'heic', 'heif', 'tif', 'tiff',
+    }.contains(ext)) {
       return 'image';
     }
-    if (const {'mp4', 'webm', 'mkv', 'avi', 'mov', 'ogv'}.contains(ext)) return 'video';
-    if (const {'mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'}.contains(ext)) return 'audio';
+    if (const {
+      'mp4', 'webm', 'mkv', 'avi', 'mov', 'ogv', 'm4v', '3gp', 'ts', 'm2ts', 'mpd', 'wmv', 'flv',
+    }.contains(ext)) {
+      return 'video';
+    }
+    if (const {
+      'mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a', 'm4b', 'aac', 'opus', 'amr', 'wma', 'mid',
+    }.contains(ext)) {
+      return 'audio';
+    }
     if (const {'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'}.contains(ext)) return 'archive';
     if (const {'pdf', 'doc', 'docx', 'txt', 'md', 'markdown', 'xls', 'xlsx', 'csv', 'json', 'xml', 'yaml', 'yml', 'log'}.contains(ext)) {
       return 'doc';
