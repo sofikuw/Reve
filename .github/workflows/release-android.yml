@@ -144,13 +144,22 @@ jobs:
           version="${{ steps.ver.outputs.version }}"
           channel="${{ inputs.release_channel }}"
           build="${{ steps.ver.outputs.build }}"
+          # Flutter adds an ABI-specific offset on top of --build-number, so the
+          # code written into each APK differs from the one computed above. Read
+          # it back instead of advertising a number no APK carries.
+          aapt=$(ls "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/build-tools/*/aapt2 | tail -1)
+          : > out/codes.txt
           for apk in build/app/outputs/flutter-apk/app-*-release.apk; do
             abi=$(basename "$apk" -release.apk)
             abi=${abi#app-}
             cp "$apk" "out/reve-${version}-${channel}-${build}-${abi}.apk"
+            code=$("$aapt" dump badging "$apk" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+            test -n "$code"
+            echo "$abi $code" >> out/codes.txt
           done
           test "$(ls -1 out/*.apk | wc -l)" -eq 3
           ls -lh out
+          cat out/codes.txt
 
       - name: Publish GitHub release
         env:
@@ -161,19 +170,22 @@ jobs:
           version='${{ steps.ver.outputs.version }}'
           build='${{ steps.ver.outputs.build }}'
           tag='${{ steps.ver.outputs.tag }}'
-          code='${{ steps.ver.outputs.code }}'
 
-          cat > notes.md <<EOF
-          **reve $version · $CHANNEL #$build** — version code \`$code\`
-
-          Split APKs: install the one that matches your phone's CPU.
-
-          | APK | Use it for |
-          | --- | --- |
-          | \`arm64-v8a\` | almost every phone from ~2016 on |
-          | \`armeabi-v7a\` | older 32-bit phones |
-          | \`x86_64\` | emulators and Intel tablets |
-          EOF
+          {
+            printf '**reve %s · %s #%s**\n\n' "$version" "$CHANNEL" "$build"
+            printf "Split APKs: install the one that matches your phone's CPU.\n\n"
+            printf '| APK | Version code | Use it for |\n'
+            printf '| --- | --- | --- |\n'
+            while read -r abi code; do
+              case "$abi" in
+                arm64-v8a) use='almost every phone from ~2016 on' ;;
+                armeabi-v7a) use='older 32-bit phones' ;;
+                x86_64) use='emulators and Intel tablets' ;;
+                *) use='' ;;
+              esac
+              printf '| `%s` | `%s` | %s |\n' "$abi" "$code" "$use"
+            done < out/codes.txt
+          } > notes.md
 
           flags=(--title "reve $version · $CHANNEL #$build" --notes-file notes.md --generate-notes)
           if [ "$CHANNEL" = stable ]; then

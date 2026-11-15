@@ -238,7 +238,7 @@ publishes them as a GitHub release. Three inputs:
 | --- | --- |
 | `release_channel` | `alpha`, `beta` or `stable` — alpha/beta are marked as pre-releases, stable becomes *latest* |
 | `version` | version **name**, e.g. `1.0.0`; blank uses `pubspec.yaml`. Passed as `--build-name`, so the pubspec is never edited |
-| `version_code` | Android version code; blank derives `(major*10000 + minor*100 + patch) * 10000 + rank*1000 + build` |
+| `version_code` | Android version code; blank derives `(major*10000 + minor*100 + patch) * 10000 + rank*1000 + build` (see below) |
 
 Each run numbers itself per version **and** channel (`#001`, `#002`, …) by
 looking at the existing tags, so the release title always says which build is
@@ -262,6 +262,12 @@ reve-1.0.0-beta-001-x86_64.apk        emulators and Intel tablets
 The channel rank (alpha 0, beta 1, stable 2) is baked into the version code, so
 stable installs over beta and beta over alpha of the same version instead of
 being rejected as a downgrade.
+
+Flutter then adds its own ABI offset on top of `--build-number` — `armeabi-v7a`
++1000, `arm64-v8a` +2000, `x86_64` +4000 — so each APK carries a slightly
+different code. The workflow reads the real one back with `aapt2 dump badging`
+and lists it per APK in the release notes, rather than quoting the number it
+computed.
 
 - Optional repository variable `OAUTH_CLIENT_ID` enables the device flow.
 - The first run generates the missing `android/` platform folder with
