@@ -291,6 +291,11 @@ computed.
   base64 -w0 debug.keystore   # → ANDROID_KEYSTORE_B64
   ```
 
+  Keep that keystore: losing it means every later release needs another
+  uninstall. Builds published before the key existed were signed with a
+  throwaway key, so those need to be uninstalled once; everything signed with
+  this key upgrades in place.
+
 - The first run generates the missing `android/` platform folder with
   `flutter create --platforms=android .`, so nothing extra is committed.
 
