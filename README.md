@@ -412,9 +412,11 @@ web/                              Flutter web shell (index.html, manifest)
 
 ## License
 
-Copyright (C) 2026 the reve contributors.
+Copyright (C) 2026 Peaqism. All rights reserved.
 
-Licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
-This program is free software: you can redistribute it and/or modify it under
-the terms of the GPL as published by the Free Software Foundation, either
-version 3 of the License, or (at your option) any later version.
+Released under the **Peaqism Proprietary License 1.0** — see [LICENSE](LICENSE).
+Evaluating, reading and referencing the source is allowed; reuse, redistribution
+and deployment are not, without written permission.
+
+Releases published before this change remain available under the GPL-3.0 they
+shipped with.
