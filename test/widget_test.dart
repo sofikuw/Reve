@@ -15,7 +15,8 @@ void main() {
   });
 
   test('upload size guard matches the Contents API budget', () {
-    expect(ReveProvider.maxUploadBytes, 95 * 1024 * 1024);
+    // Measured against the live API: 39 MiB lands, 40 MiB returns 422.
+    expect(ReveProvider.maxUploadBytes, 38 * 1024 * 1024);
   });
 
   test('aborted sockets are explained instead of dumped raw', () {

@@ -20,9 +20,11 @@ class ReveProvider with ChangeNotifier {
   static const String _autoSortKey = 'auto_sort_uploads';
   static const String _updateChannelKey = 'update_channel';
 
-  /// GitHub's Contents API rejects anything above 100 MB. Base64 + JSON adds
-  /// overhead, so stay comfortably below it.
-  static const int maxUploadBytes = 95 * 1024 * 1024;
+  /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
+  /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
+  /// 39 MiB file lands, 40 MiB comes back 422 "the file is too large to be
+  /// processed". Stay one MiB below that.
+  static const int maxUploadBytes = 38 * 1024 * 1024;
 
   final List<GithubAccount> _accounts = [];
   GithubAccount? _activeAccount;
@@ -485,7 +487,8 @@ class ReveProvider with ChangeNotifier {
     if (bytes.lengthInBytes > maxUploadBytes) {
       return UploadResult(
         false,
-        '$fileName is larger than the 95 MB Contents API limit. Use the Git LFS route or split the file.',
+        '$fileName is ${formatBytes(bytes.lengthInBytes)} — GitHub stops at about '
+        '39 MB for a single API upload. Split it, or store it as a release asset.',
       );
     }
 

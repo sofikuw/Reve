@@ -49,8 +49,10 @@ Two clients ship in this repo:
 - **Resilient networking** — Android builds retry a failed `api.github.com`
   lookup through DNS-over-HTTPS, which fixes the `Failed host lookup` error on
   phones whose private DNS or VPN breaks name resolution.
-- **Honest limits** — GitHub's Contents API caps a single file at 100 MB;
-  `reve` warns at 95 MB before wasting an upload.
+- **Honest limits** — GitHub rejects a Contents API request body over ~52 MB,
+  and base64 inflates a file by a third, so one file tops out at 39 MiB.
+  `reve` refuses anything over 38 MiB before reading it, instead of burning an
+  upload on a 422. Bigger files need release assets (2 GB each) or Git LFS.
 - **Material 3** — light/dark/auto themes, responsive layout, keyboard friendly.
 
 ### Brand assets

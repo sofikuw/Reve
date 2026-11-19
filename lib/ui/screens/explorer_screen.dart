@@ -583,6 +583,12 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     final failures = <String>[];
     for (final file in picked) {
       if (!mounted) return;
+      // Check the size before reading: a 500 MB pick must not be loaded into RAM
+      // just to be rejected.
+      if (file.size > ReveProvider.maxUploadBytes) {
+        failures.add('${file.name} is ${formatBytes(file.size)} — GitHub stops at about 39 MB');
+        continue;
+      }
       Uint8List bytes;
       try {
         bytes = await file.readAsBytes();

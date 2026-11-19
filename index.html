@@ -1722,7 +1722,9 @@ function pickFiles() {
   $('fileInput').click();
 }
 
-const MAX_FILE = 95 * 1024 * 1024;
+// GitHub caps a contents request body at ~52 MB and base64 inflates a file by
+// a third, so 39 MiB is the real per-file ceiling (40 MiB returns 422).
+const MAX_FILE = 38 * 1024 * 1024;
 
 function toBase64(bytes) {
   let binary = '';
@@ -1741,7 +1743,7 @@ function targetPath(name) {
 }
 
 async function uploadOne(file, index, total) {
-  if (file.size > MAX_FILE) throw new Error(`${file.name} is larger than the 95 MB Contents API limit`);
+  if (file.size > MAX_FILE) throw new Error(`${file.name} is ${fmtSize(file.size)} — GitHub stops at about 39 MB for a single API upload`);
   const path = targetPath(file.name);
   const bytes = new Uint8Array(await file.arrayBuffer());
   const body = {
