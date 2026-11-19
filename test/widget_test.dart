@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:reve/models/file_item.dart';
 import 'package:reve/providers/reve_provider.dart';
 import 'package:reve/services/github_service.dart';
 import 'package:reve/services/updater.dart';
@@ -17,6 +18,35 @@ void main() {
   test('upload size guard matches the Contents API budget', () {
     // Measured against the live API: 39 MiB lands, 40 MiB returns 422.
     expect(ReveProvider.maxUploadBytes, 38 * 1024 * 1024);
+  });
+
+  test('asset names stay readable, unique and extension-preserving', () {
+    final a = GithubService.assetFileName('videos/My clip (final).MP4');
+    final b = GithubService.assetFileName('videos/My clip (final).MP4');
+    expect(a, endsWith('.mp4'));
+    expect(a, startsWith('My_clip__final_'));
+    expect(a, isNot(b));
+    expect(GithubService.assetFileName('notes'), isNot(contains('.')));
+  });
+
+  test('players get a real media type, not octet-stream', () {
+    expect(GithubService.mimeFor('clip.MP4'), 'video/mp4');
+    expect(GithubService.mimeFor('song.flac'), 'audio/flac');
+    expect(GithubService.mimeFor('photo.jpeg'), 'image/jpeg');
+    expect(GithubService.mimeFor('archive.7z'), 'application/octet-stream');
+  });
+
+  test('asset-backed files keep their path, size and id', () {
+    final item = GithubFileItem.fromAsset('videos/clip.mp4', {
+      'id': 42,
+      'name': 'clip-abc.mp4',
+      'size': 123456,
+    });
+    expect(item.name, 'clip.mp4');
+    expect(item.path, 'videos/clip.mp4');
+    expect(item.size, 123456);
+    expect(item.isAsset, isTrue);
+    expect(item.isDirectory, isFalse);
   });
 
   test('aborted sockets are explained instead of dumped raw', () {

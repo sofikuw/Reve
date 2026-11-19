@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/account.dart';
@@ -24,9 +25,21 @@ class DeviceAuthorization {
 
 class GithubService {
   static const String baseUrl = 'https://api.github.com';
+  static const String uploadsUrl = 'https://uploads.github.com';
   static const Duration _timeout = Duration(seconds: 30);
   /// A whole file body has to finish uploading inside this window.
   static const Duration _uploadTimeout = Duration(minutes: 5);
+  /// Release assets are the only path for files the Contents API refuses, and
+  /// they can be 2 GB — give a phone on mobile data room to finish.
+  static const Duration _assetTimeout = Duration(minutes: 30);
+
+  /// Files over the Contents ceiling live as assets of this release. It is a
+  /// prerelease so it never shows up as the repository's "latest release".
+  static const String assetTag = 'reve-assets';
+  static const String manifestPath = '.reve/assets.json';
+  static const Map<String, int> _releaseIds = {};
+  static final Map<String, String> _signedUrls = {};
+  static final Map<String, DateTime> _signedAt = {};
 
   /// Android aborts sockets eagerly — when the app is backgrounded (we launch
   /// the browser during device login), when a proxy/VPN resets the TLS
@@ -413,6 +426,314 @@ class GithubService {
       path.split('/').where((s) => s.isNotEmpty).map(Uri.encodeComponent).join('/');
 
   // ---------------------------------------------------------------------------
+  // Release-asset storage (files GitHub's Contents API refuses)
+  // ---------------------------------------------------------------------------
+
+  /// The media type stored with the asset, so players and browsers know what
+  /// they are streaming instead of seeing `application/octet-stream`.
+  static String mimeFor(String name) {
+    final dot = name.lastIndexOf('.');
+    final ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
+    const types = {
+      'mp4': 'video/mp4', 'm4v': 'video/mp4', 'mov': 'video/quicktime',
+      'webm': 'video/webm', 'mkv': 'video/x-matroska', 'ogv': 'video/ogg',
+      '3gp': 'video/3gpp', 'avi': 'video/x-msvideo', 'mpg': 'video/mpeg',
+      'mpeg': 'video/mpeg', 'ts': 'video/mp2t',
+      'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'm4b': 'audio/mp4',
+      'aac': 'audio/aac', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+      'oga': 'audio/ogg', 'flac': 'audio/flac', 'opus': 'audio/opus',
+      'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+      'gif': 'image/gif', 'webp': 'image/webp', 'avif': 'image/avif',
+      'bmp': 'image/bmp', 'svg': 'image/svg+xml', 'heic': 'image/heic',
+      'pdf': 'application/pdf', 'zip': 'application/zip',
+      'txt': 'text/plain; charset=utf-8', 'md': 'text/markdown',
+      'json': 'application/json',
+    };
+    return types[ext] ?? 'application/octet-stream';
+  }
+
+  /// Asset names are repo-wide inside the release, so keep the original stem
+  /// readable and append a salt: two folders can hold `clip.mp4`.
+  static String assetFileName(String path) {
+    final base = path.split('/').last;
+    final dot = base.lastIndexOf('.');
+    final stem = dot > 0 ? base.substring(0, dot) : base;
+    final ext = dot > 0 ? base.substring(dot).toLowerCase() : '';
+    final clean = stem.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
+    final short = clean.length > 60 ? clean.substring(0, 60) : clean;
+    final salt = DateTime.now().microsecondsSinceEpoch.toRadixString(36) +
+        Random().nextInt(1 << 20).toRadixString(36);
+    return '$short-$salt$ext';
+  }
+
+  /// Direct download URL for a public repository. Media elements can stream
+  /// from it; it redirects to a signed object URL that supports byte ranges.
+  static String publicAssetUrl(String owner, String repo, String assetName) =>
+      'https://github.com/$owner/$repo/releases/download/$assetTag/'
+      '${Uri.encodeComponent(assetName)}';
+
+  /// Finds (or creates) the release that holds large files.
+  static Future<int> ensureAssetRelease({
+    required String token,
+    required String owner,
+    required String repo,
+    String? branch,
+  }) async {
+    final key = '$owner/$repo';
+    final known = _releaseIds[key];
+    if (known != null) return known;
+
+    final lookup = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/releases/tags/$assetTag'),
+      headers: _headers(token),
+    );
+    if (lookup.statusCode == 200) {
+      final id = (jsonDecode(lookup.body) as Map<String, dynamic>)['id'] as int;
+      _releaseIds[key] = id;
+      return id;
+    }
+    if (lookup.statusCode != 404) {
+      throw Exception('Could not reach the large-file store (${lookup.statusCode}).');
+    }
+
+    final created = await _post(
+      Uri.parse('$baseUrl/repos/$owner/$repo/releases'),
+      headers: {..._headers(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'tag_name': assetTag,
+        'name': 'Reve asset storage',
+        'body': 'Files too large for a normal commit, uploaded by Reve. '
+            'They still show up in the app file manager.',
+        'prerelease': true,
+        'draft': false,
+        if (branch != null && branch.isNotEmpty) 'target_commitish': branch,
+      }),
+    );
+    if (created.statusCode == 409) {
+      // Another device created it between the lookup and the POST.
+      final again = await _get(
+        Uri.parse('$baseUrl/repos/$owner/$repo/releases/tags/$assetTag'),
+        headers: _headers(token),
+      );
+      final id = (jsonDecode(again.body) as Map<String, dynamic>)['id'] as int;
+      _releaseIds[key] = id;
+      return id;
+    }
+    if (created.statusCode != 201) {
+      throw Exception('Could not create the large-file store: ${created.body}');
+    }
+    final id = (jsonDecode(created.body) as Map<String, dynamic>)['id'] as int;
+    _releaseIds[key] = id;
+    return id;
+  }
+
+  /// Streams one file into the asset release and returns the asset JSON.
+  static Future<Map<String, dynamic>> uploadAsset({
+    required String token,
+    required String owner,
+    required String repo,
+    required int releaseId,
+    required String name,
+    required String mime,
+    required int length,
+    Uint8List? bytes,
+    Stream<List<int>>? source,
+    void Function(double fraction)? onProgress,
+  }) async {
+    final request = http.StreamedRequest(
+      'POST',
+      Uri.parse('$uploadsUrl/repos/$owner/$repo/releases/$releaseId/assets'
+          '?name=${Uri.encodeComponent(name)}'),
+    )
+      ..headers.addAll({
+        ..._headers(token),
+        'Content-Type': mime,
+      })
+      ..contentLength = length;
+
+    final client = http.Client();
+    try {
+      final pending = client.send(request).timeout(_assetTimeout);
+      var sent = 0;
+      try {
+        // Same ordering as Contents uploads: start sending first, then feed the
+        // body, because closing the sink only completes once the request went out.
+        final chunks = source ??
+            (bytes == null
+                ? const Stream<List<int>>.empty()
+                : Stream<List<int>>.fromIterable([bytes]));
+        await for (final chunk in chunks) {
+          request.sink.add(chunk);
+          sent += chunk.length;
+          onProgress?.call(length > 0 ? sent / length : 1);
+          await Future<void>.delayed(Duration.zero);
+        }
+      } finally {
+        unawaited(request.sink.close());
+      }
+
+      final response = await pending;
+      final text = await response.stream.bytesToString().timeout(_timeout);
+      if (response.statusCode != 201) {
+        throw Exception('Large-file upload failed (${response.statusCode}): $text');
+      }
+      return jsonDecode(text) as Map<String, dynamic>;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Reads `.reve/assets.json` — the list that keeps asset files visible in
+  /// the file manager. A missing manifest is an empty one, not an error.
+  static Future<AssetManifest> readAssetManifest({
+    required String token,
+    required String owner,
+    required String repo,
+    String? branch,
+  }) async {
+    var uri = '$baseUrl/repos/$owner/$repo/contents/${_encodePath(manifestPath)}';
+    if (branch != null && branch.isNotEmpty) {
+      uri += '?ref=${Uri.encodeComponent(branch)}';
+    }
+    final response = await _get(Uri.parse(uri), headers: _headers(token));
+    if (response.statusCode == 404) return const AssetManifest({}, null);
+    if (response.statusCode != 200) {
+      throw Exception('Could not read the large-file list (${response.statusCode}).');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final content = data['content'] as String? ?? '';
+    final text = content.isEmpty
+        ? ''
+        : utf8.decode(
+            base64Decode(content.replaceAll(RegExp(r'\s'), '')),
+            allowMalformed: true,
+          );
+    final parsed = text.trim().isEmpty ? null : jsonDecode(text);
+    final raw = parsed is Map ? parsed['files'] : null;
+    final entries = <String, Map<String, dynamic>>{};
+    if (raw is Map) {
+      for (final entry in raw.entries) {
+        if (entry.value is Map) {
+          entries[entry.key.toString()] =
+              Map<String, dynamic>.from(entry.value as Map);
+        }
+      }
+    }
+    return AssetManifest(entries, data['sha'] as String?);
+  }
+
+  /// Writes the manifest back. Returns the new blob sha; a 409 means another
+  /// device wrote first, so the caller re-reads and retries.
+  static Future<String?> putAssetManifest({
+    required String token,
+    required String owner,
+    required String repo,
+    required Map<String, Map<String, dynamic>> files,
+    required String? sha,
+    String? branch,
+  }) async {
+    final body = jsonEncode({
+      'message': 'Update large-file index via reve',
+      'content': base64Encode(utf8.encode(jsonEncode({'version': 1, 'files': files}))),
+      if (sha != null && sha.isNotEmpty) 'sha': sha,
+      if (branch != null && branch.isNotEmpty) 'branch': branch,
+    });
+    final response = await http.put(
+      Uri.parse('$baseUrl/repos/$owner/$repo/contents/${_encodePath(manifestPath)}'),
+      headers: {..._headers(token), 'Content-Type': 'application/json'},
+      body: body,
+    ).timeout(_timeout);
+    if (response.statusCode == 409) throw const ManifestConflict();
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception('Could not save the large-file list: ${response.body}');
+    }
+    final data = jsonDecode(response.body);
+    return data is Map ? (data['content']?['sha'] as String?) : null;
+  }
+
+  static Future<void> deleteAsset({
+    required String token,
+    required String owner,
+    required String repo,
+    required int assetId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/repos/$owner/$repo/releases/assets/$assetId'),
+      headers: _headers(token),
+    );
+    if (response.statusCode != 204 && response.statusCode != 404) {
+      throw Exception('Could not delete the stored file (${response.statusCode}).');
+    }
+    final key = '$owner/$repo/$assetId';
+    _signedUrls.remove(key);
+    _signedAt.remove(key);
+  }
+
+  /// Turns a private asset into a short-lived signed URL. Players get a plain
+  /// URL with no headers, which is what ExoPlayer and AVPlayer handle best.
+  static Future<String> signedAssetUrl({
+    required String token,
+    required String owner,
+    required String repo,
+    required int assetId,
+  }) async {
+    final key = '$owner/$repo/$assetId';
+    final at = _signedAt[key];
+    if (at != null &&
+        DateTime.now().difference(at) < const Duration(minutes: 40) &&
+        _signedUrls.containsKey(key)) {
+      return _signedUrls[key]!;
+    }
+
+    final client = http.Client();
+    try {
+      final request = http.Request(
+        'GET',
+        Uri.parse('$baseUrl/repos/$owner/$repo/releases/assets/$assetId'),
+      )
+        ..followRedirects = false
+        ..headers.addAll({
+          ..._headers(token),
+          'Accept': 'application/octet-stream',
+        });
+      final response = await client.send(request).timeout(_timeout);
+      await response.stream.drain<void>();
+      final location = response.headers['location'];
+      if (response.statusCode >= 300 &&
+          response.statusCode < 400 &&
+          location != null &&
+          location.isNotEmpty) {
+        _signedUrls[key] = location;
+        _signedAt[key] = DateTime.now();
+        return location;
+      }
+      throw Exception('Could not open the stored file (${response.statusCode}).');
+    } finally {
+      client.close();
+    }
+  }
+
+  static Future<Uint8List> fetchAssetBytes({
+    required String url,
+    void Function(double? fraction, int loaded)? onProgress,
+  }) async {
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(url))
+        ..headers['User-Agent'] = 'reve-cloud-storage';
+      final response = await client.send(request).timeout(_timeout);
+      if (response.statusCode != 200) {
+        await response.stream.drain<void>();
+        throw Exception('Could not read the stored file (${response.statusCode}).');
+      }
+      return _readAll(response, onProgress);
+    } finally {
+      client.close();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
 
@@ -562,4 +883,21 @@ class _FetchAttempt {
   final bool blob;
 
   const _FetchAttempt(this.url, {this.auth = false, this.blob = false});
+}
+
+/// `.reve/assets.json`: logical path → release-asset metadata.
+class AssetManifest {
+  final Map<String, Map<String, dynamic>> files;
+  final String? sha;
+
+  const AssetManifest(this.files, this.sha);
+
+  int get totalBytes => files.values.fold(
+        0,
+        (sum, file) => sum + ((file['size'] as num?)?.toInt() ?? 0),
+      );
+}
+
+class ManifestConflict implements Exception {
+  const ManifestConflict();
 }

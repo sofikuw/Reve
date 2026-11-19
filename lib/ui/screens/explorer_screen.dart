@@ -256,6 +256,20 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
               ),
             ),
+          if (provider.selectedRepo != null)
+            Tooltip(
+              message: provider.assetBytes > 0
+                  ? '${formatBytes(provider.repoSizeBytes)} used · '
+                      '${formatBytes(provider.assetBytes)} in ${provider.assetCount} release assets'
+                  : '${formatBytes(provider.repoSizeBytes)} used',
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Text(
+                  formatBytes(provider.repoSizeBytes),
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: 'Refresh',
             visualDensity: VisualDensity.compact,
@@ -362,7 +376,9 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           leading: _leading(item),
           title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            item.isDirectory ? 'Folder' : formatBytes(item.size),
+            item.isDirectory
+                ? 'Folder'
+                : '${formatBytes(item.size)}${item.isAsset ? ' · release asset' : ''}',
             style: const TextStyle(fontSize: 11.5),
           ),
           onTap: () => _activate(provider, item),
@@ -583,10 +599,30 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     final failures = <String>[];
     for (final file in picked) {
       if (!mounted) return;
-      // Check the size before reading: a 500 MB pick must not be loaded into RAM
-      // just to be rejected.
       if (file.size > ReveProvider.maxUploadBytes) {
-        failures.add('${file.name} is ${formatBytes(file.size)} — GitHub stops at about 39 MB');
+        // Large picks stream straight from disk into a release asset, so a
+        // 500 MB film never has to sit in RAM.
+        Uint8List? bytes;
+        var stream = file.readStream;
+        if (stream == null) {
+          try {
+            bytes = await file.readAsBytes();
+          } catch (e) {
+            failures.add('${file.name}: could not read file');
+            continue;
+          }
+        }
+        final outcome = await provider.uploadLargeFile(
+          fileName: file.name,
+          length: file.size,
+          stream: stream,
+          bytes: bytes,
+        );
+        if (outcome.ok) {
+          ok++;
+        } else {
+          failures.add(outcome.message);
+        }
         continue;
       }
       Uint8List bytes;

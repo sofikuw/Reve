@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../models/file_item.dart';
 import '../../providers/reve_provider.dart';
+import '../../services/github_service.dart';
 
 /// Everything gets a viewer. Bytes come through the API first (so private
 /// repositories work), and formats Flutter cannot draw fall back to a card
@@ -36,6 +37,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   late int _index = widget.initialIndex;
   bool _info = false;
   final Map<String, Future<Uint8List>> _loads = {};
+  final Map<String, Future<String?>> _streams = {};
 
   @override
   void dispose() {
@@ -47,6 +49,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   Future<Uint8List> _bytesOf(GithubFileItem item) =>
       _loads.putIfAbsent(item.path, () => widget.provider.readBytes(item));
+
+  Future<String?> _streamOf(GithubFileItem item) =>
+      _streams.putIfAbsent(item.path, () => widget.provider.streamUrlFor(item));
 
   @override
   Widget build(BuildContext context) {
@@ -187,12 +192,20 @@ class _PreviewScreenState extends State<PreviewScreen> {
     // Audio and video are streamed, never buffered: a 300 MB film would blow
     // through memory long before it played.
     if (kind == 'video' || kind == 'audio') {
-      return _MediaPreview(
-        item: item,
-        audioOnly: kind == 'audio',
-        url: widget.provider.downloadUrlFor(item),
-        headers: widget.provider.authHeaders,
-        onSave: () => _save(item),
+      return FutureBuilder<String?>(
+        future: _streamOf(item),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+          }
+          return _MediaPreview(
+            item: item,
+            audioOnly: kind == 'audio',
+            url: snapshot.data,
+            headers: widget.provider.headersFor(item),
+            onSave: () => _save(item),
+          );
+        },
       );
     }
     if (item.size > _maxPreviewBytes) {
@@ -553,6 +566,15 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   Future<void> _open(GithubFileItem item) async {
+    if (item.isAsset) {
+      // Private asset URLs only work with a token header, so point at the
+      // release page instead of a raw link the browser cannot open.
+      final target = widget.provider.downloadUrlFor(item) ??
+          'https://github.com/${widget.provider.owner}/${widget.provider.repoName}'
+              '/releases/tag/${GithubService.assetTag}';
+      await launchUrl(Uri.parse(target), mode: LaunchMode.externalApplication);
+      return;
+    }
     final url = item.htmlUrl;
     if (url == null) {
       _toast('No GitHub URL for this file');
@@ -636,6 +658,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
       'Size': formatBytes(item.size),
       'SHA': item.sha.isEmpty ? '—' : item.sha.substring(0, item.sha.length >= 7 ? 7 : item.sha.length),
       'Type': item.type,
+      'Stored as': item.isAsset ? 'release asset (large file)' : 'repository file',
     };
     return Container(
       width: double.infinity,

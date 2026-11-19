@@ -803,9 +803,16 @@ const S = {
   cache: new Map(),   // "branch|path" -> { entries, at }  (instant back/forward)
   req: new Map(),     // in-flight listing requests, deduped
   scroll: new Map(),  // "branch|path" -> scrollTop
+  assets: {},         // logical path -> release-asset metadata
+  assetsKey: null,    // repo+branch the index above belongs to
+  assetsReq: null,
 };
 
 const API = 'https://api.github.com';
+
+/* Files over the Contents ceiling live as assets of this prerelease. */
+const ASSET_TAG = 'reve-assets';
+const ASSET_MANIFEST = '.reve/assets.json';
 
 /* Public OAuth App client ID (not a secret). Device flow only needs this. */
 const DEFAULT_CLIENT_ID = 'Ov23liKqKI4YQP1Ie3OQ';
@@ -1411,6 +1418,9 @@ function resetCaches() {
   S.cache.clear();
   S.req.clear();
   S.scroll.clear();
+  S.assets = {};
+  S.assetsKey = null;
+  S.assetsReq = null;
 }
 
 async function selectRepo(repo) {
@@ -1471,13 +1481,84 @@ function fetchEntries(path) {
   if (pending) return pending;
   const base = `/repos/${enc(S.repo.owner.login)}/${enc(S.repo.name)}/contents/${encodePath(path)}`;
   const q = S.branch ? `?ref=${enc(S.branch)}` : '';
-  const request = api(base + q).then((data) => {
-    const list = Array.isArray(data) ? data : [data];
+  const request = Promise.all([api(base + q), ensureAssets()]).then(([data, assets]) => {
+    let list = Array.isArray(data) ? data : [data];
+    if (!path) list = list.filter((e) => e.name !== '.reve');
+    const seen = new Set(list.map((e) => e.path));
+    for (const entry of assetEntries(path)) {
+      if (!seen.has(entry.path)) list.push(entry);
+    }
     return list.sort(entryOrder);
   });
   S.req.set(key, request);
   request.then(() => S.req.delete(key), () => S.req.delete(key));
   return request;
+}
+
+/* ============================================================
+   Large files: release-asset index
+   ============================================================ */
+function assetsKeyNow() {
+  if (!S.repo) return '';
+  return `${S.repo.owner.login}/${S.repo.name}/${S.branch || ''}`;
+}
+
+async function readAssetDoc() {
+  const ref = S.branch ? `?ref=${enc(S.branch)}` : '';
+  try {
+    const data = await api(`${repoBase()}/contents/${encodePath(ASSET_MANIFEST)}${ref}`);
+    const raw = atob(String(data.content || '').replace(/\s/g, ''));
+    const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+    let doc = {};
+    try { doc = JSON.parse(new TextDecoder().decode(bytes) || '{}'); } catch (_) { /* empty */ }
+    return { files: (doc && doc.files) || {}, sha: data.sha };
+  } catch (e) {
+    if (e.status === 404) return { files: {}, sha: null };
+    throw e;
+  }
+}
+
+/* Loads the index once per repo+branch; a failure means "no large files". */
+function ensureAssets() {
+  const key = assetsKeyNow();
+  if (S.assetsKey === key && S.assetsReq) return S.assetsReq;
+  S.assetsKey = key;
+  S.assetsReq = readAssetDoc()
+    .then((doc) => { S.assets = doc.files; return S.assets; })
+    .catch(() => { S.assets = {}; return S.assets; });
+  return S.assetsReq;
+}
+
+function assetEntries(path) {
+  const out = [];
+  for (const [p, a] of Object.entries(S.assets || {})) {
+    const slash = p.lastIndexOf('/');
+    const dir = slash > 0 ? p.slice(0, slash) : '';
+    if (dir !== path) continue;
+    out.push({
+      name: p.slice(slash + 1),
+      path: p,
+      type: 'file',
+      size: Number(a.size) || 0,
+      asset: true,
+      assetId: a.id,
+      assetName: a.name,
+      sha: '',
+    });
+  }
+  return out;
+}
+
+/* Public repositories stream release assets straight into <img>/<video>.
+   Private ones need a token header, which media elements cannot send — the
+   preview then links to GitHub instead. */
+function assetUrl(entry) {
+  return `https://github.com/${enc(S.repo.owner.login)}/${enc(S.repo.name)}` +
+    `/releases/download/${ASSET_TAG}/${enc(entry.assetName || entry.name)}`;
+}
+
+function assetStreamable() {
+  return S.repo && S.repo.private === false;
 }
 
 async function loadEntries(opts = {}) {
@@ -1641,8 +1722,10 @@ function listRow(e) {
 
 function thumbTile(e, kind, cls) {
   if (kind !== 'image') return `<span class="tile-icon ${cls}">${icon(KIND_ICON[kind])}</span>`;
+  if (e.asset && !assetStreamable()) return `<span class="tile-icon ${cls}">${icon(KIND_ICON[kind])}</span>`;
+  const src = e.asset ? assetUrl(e) : rawUrl(e.path);
   return `<span class="tile-icon ${cls} thumb-tile">
-      <img class="thumb" loading="lazy" decoding="async" alt="" src="${esc(rawUrl(e.path))}" onerror="this.remove()">
+      <img class="thumb" loading="lazy" decoding="async" alt="" src="${esc(src)}" onerror="this.remove()">
     </span>`;
 }
 
@@ -1743,7 +1826,7 @@ function targetPath(name) {
 }
 
 async function uploadOne(file, index, total) {
-  if (file.size > MAX_FILE) throw new Error(`${file.name} is ${fmtSize(file.size)} — GitHub stops at about 39 MB for a single API upload`);
+  if (file.size > MAX_FILE) throw new Error(`${file.name} is ${fmtSize(file.size)} — this browser cannot upload GitHub release assets (the upload host blocks cross-origin requests). Use the Reve app for files over 38 MB.`);
   const path = targetPath(file.name);
   const bytes = new Uint8Array(await file.arrayBuffer());
   const body = {
@@ -1924,11 +2007,12 @@ function openNewRepo() {
 }
 
 function entryMenu(path, isDir, name, ev) {
+  const item = S.entries.find((e) => e.path === path);
   const items = [];
   if (!isDir) {
     items.push({ icon: 'eye', label: 'Preview', run: () => preview(path, name) });
     items.push({ icon: 'download', label: 'Download', run: () => downloadEntry(path) });
-    items.push({ icon: 'edit', label: 'Rename', run: () => renameEntry(path, name) });
+    if (!(item && item.asset)) items.push({ icon: 'edit', label: 'Rename', run: () => renameEntry(path, name) });
   }
   items.push({ icon: 'trash', label: 'Delete', danger: true, run: () => deleteEntry(path, name, isDir) });
   showMenu(items, ev);
@@ -1965,7 +2049,9 @@ function closeMenu() {
 }
 
 async function deleteEntry(path, name, isDir) {
-  const message = `Delete “${name}”${isDir ? ' and everything inside it' : ''}?\n\nThis creates a commit you can revert on GitHub.`;
+  const item = S.entries.find((e) => e.path === path);
+  const storage = item && item.asset ? 'It is stored as a release asset, so this cannot be undone from Git history.' : 'This creates a commit you can revert on GitHub.';
+  const message = `Delete “${name}”${isDir ? ' and everything inside it' : ''}?\n\n${storage}`;
   if (!confirm(message)) return;
   setBusy(true, 'Deleting…');
   try {
@@ -1986,16 +2072,47 @@ async function deletePath(path) {
   try {
     meta = await api(url + (S.branch ? `?ref=${enc(S.branch)}` : ''));
   } catch (e) {
-    if (e.status === 404) return;
+    if (e.status === 404) { await removeAssets(path, true); return; }
     throw e;
   }
   if (Array.isArray(meta)) {
     for (const child of meta) await deletePath(child.path);
+    await removeAssets(path, false);
     return;
   }
   const body = { message: `Delete ${path} via reve`, sha: meta.sha };
   if (S.branch) body.branch = S.branch;
   await api(url, { method: 'DELETE', body });
+}
+
+/* The Contents API cannot see assets, so the index is the only record. */
+async function removeAssets(folder, includeSelf) {
+  const prefix = folder ? folder + '/' : '';
+  const paths = Object.keys(S.assets || {}).filter((p) => (includeSelf && p === folder) || p.startsWith(prefix));
+  if (!paths.length) return;
+
+  const doc = await readAssetDoc();
+  const ids = [];
+  for (const p of paths) {
+    const id = doc.files[p] && doc.files[p].id;
+    if (id) ids.push(id);
+    delete doc.files[p];
+  }
+  await writeAssetDoc(doc);
+  S.assets = doc.files;
+  S.assetsKey = assetsKeyNow();
+  S.assetsReq = Promise.resolve(doc.files);
+  for (const id of ids) {
+    api(`${repoBase()}/releases/assets/${id}`, { method: 'DELETE' }).catch(() => {});
+  }
+}
+
+async function writeAssetDoc(doc) {
+  const content = toBase64(new TextEncoder().encode(JSON.stringify({ version: 1, files: doc.files })));
+  const body = { message: 'Update large-file index via reve', content };
+  if (doc.sha) body.sha = doc.sha;
+  if (S.branch) body.branch = S.branch;
+  return api(`${repoBase()}/contents/${encodePath(ASSET_MANIFEST)}`, { method: 'PUT', body });
 }
 
 async function renameEntry(path, name) {
@@ -2124,6 +2241,21 @@ async function downloadEntry(path, name) {
   if (!S.repo) return snack('Select a repository first', true);
   const item = S.entries.find((e) => e.path === path);
   const fileName = name || path.split('/').pop();
+
+  if (item && item.asset) {
+    // Straight from GitHub: the browser follows the redirect and its own
+    // session, so this also works for private repositories.
+    const a = document.createElement('a');
+    a.href = assetUrl(item);
+    a.target = '_blank';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    snack(assetStreamable() ? `Downloading ${fileName}` : 'Opening on GitHub — sign in there to download');
+    return;
+  }
+
   setBusy(true);
   setProgress(0, `Downloading ${fileName}…`);
   try {
@@ -2182,7 +2314,8 @@ function currentPreview() {
 }
 
 function releasePreview() {
-  if (PV.url) { URL.revokeObjectURL(PV.url); PV.url = null; }
+  if (PV.url && PV.url.startsWith('blob:')) URL.revokeObjectURL(PV.url);
+  PV.url = null;
 }
 
 /* Opens the preview over a gallery of the files in the current folder, so
@@ -2217,11 +2350,31 @@ async function loadPreview() {
     extOf(name).toUpperCase() || 'FILE',
     item.sha ? item.sha.slice(0, 7) : '',
   ].filter(Boolean).join(' · ');
-  $('pvOpen').href = githubBlobUrl(item.path);
+  $('pvOpen').href = item.asset ? assetUrl(item) : githubBlobUrl(item.path);
   ['pvZoomIn', 'pvZoomOut', 'pvReset', 'pvRotate'].forEach((id) => $(id).classList.toggle('hidden', type !== 'image'));
 
   body.innerHTML = `<div class="pv-note">Loading ${esc(name)}…</div>`;
   setProgress(0, `Loading ${esc(name)}…`);
+
+  // Large files are release assets. Public repositories stream them straight
+  // into <img>/<video>; private ones cannot be read without a token header,
+  // which media elements do not send.
+  if (item.asset) {
+    PV.url = assetUrl(item);
+    const dl = $('previewDownload');
+    dl.href = PV.url;
+    dl.setAttribute('download', name);
+    setProgress(null);
+    if (assetStreamable() && ['image', 'video', 'audio'].includes(type)) {
+      await renderPreview(type, name, { size: item.size }, item, token);
+    } else {
+      body.innerHTML = assetCard(name, item, assetStreamable()
+        ? 'This format needs the raw bytes and GitHub does not allow reading release assets across origins.'
+        : 'This repository is private, so the browser cannot stream the stored file inline.');
+    }
+    return;
+  }
+
   let blob;
   try {
     blob = await fetchFileBlob(item.path, {
@@ -2353,6 +2506,19 @@ function mediaFallback(kind, name, blob, item) {
       <a class="btn text small" href="${githubBlobUrl(item.path)}" target="_blank" rel="noopener">${icon('external', 'i-14')} GitHub</a>
     </div>
     <p class="pv-meta" style="margin-top:12px">Saving it hands the file to your gallery or player, which usually supports ${esc(ext)} even when the browser does not.</p>
+  </div>`;
+}
+
+function assetCard(name, item, reason) {
+  const ext = (extOf(name) || 'file').toUpperCase();
+  return `<div class="pv-fallback">
+    <div class="pv-fallback-badge">${icon('download', 'i-40')}<span>${esc(ext)}</span></div>
+    <b>${esc(name)}</b>
+    <p class="pv-meta" style="margin:4px 0 0">${fmtSize(item.size)} · stored as a GitHub release asset. ${esc(reason)}</p>
+    <div class="pv-fallback-actions">
+      <a class="btn filled small" href="${esc(assetUrl(item))}" target="_blank" rel="noopener">${icon('external', 'i-14')} Open on GitHub</a>
+      <button class="btn tonal small" onclick="downloadEntry('${esc(item.path).replace(/'/g, "\\'")}')">${icon('download', 'i-14')} Save file</button>
+    </div>
   </div>`;
 }
 

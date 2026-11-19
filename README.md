@@ -49,11 +49,36 @@ Two clients ship in this repo:
 - **Resilient networking** — Android builds retry a failed `api.github.com`
   lookup through DNS-over-HTTPS, which fixes the `Failed host lookup` error on
   phones whose private DNS or VPN breaks name resolution.
-- **Honest limits** — GitHub rejects a Contents API request body over ~52 MB,
-  and base64 inflates a file by a third, so one file tops out at 39 MiB.
-  `reve` refuses anything over 38 MiB before reading it, instead of burning an
-  upload on a 422. Bigger files need release assets (2 GB each) or Git LFS.
+- **Honest limits, lifted** — GitHub rejects a Contents API request body over
+  ~52 MB, and base64 inflates a file by a third, so a committed file tops out at
+  39 MiB. `reve` therefore commits files up to 38 MiB and stores anything larger
+  as a release asset (up to 2 GB each) without asking. The file keeps its place
+  in the folder listing, previews inline, and plays with byte-range seeks.
 - **Material 3** — light/dark/auto themes, responsive layout, keyboard friendly.
+
+### Large files
+
+GitHub has two different ceilings: a commit body stops at 39 MiB, a release
+asset at 2 GB. `reve` uses the second one for anything the first refuses.
+
+- The app streams big picks from disk into a prerelease tagged `reve-assets`
+  (never shown as the repository's latest release), then records the mapping in
+  `.reve/assets.json` — a small committed file that keeps the upload visible in
+  the tree, with its real name, size and format.
+- Previews download the asset through the API, so private repositories work too.
+  Video and audio get a short-lived signed URL and play with `Range` requests,
+  which is what makes seeking work rather than buffering the whole film.
+  GitHub always serves the bytes as `application/octet-stream`, whatever type
+  was uploaded; players sniff the container, so MP4/WebM/MKV and the usual audio
+  formats play, but an exotic container may fall back to the save card.
+- Deleting an asset-backed file removes both the index entry and the asset;
+  deleting a folder takes its assets with it.
+- The browser cannot do the same upload: `uploads.github.com` answers the CORS
+  preflight with 400, and release-asset downloads carry no
+  `Access-Control-Allow-Origin`. The web client keeps the 38 MiB commit path
+  and tells you to use the app above it. For **public** repositories it still
+  streams asset images, video and audio inline (media elements do not need
+  CORS); private repositories open them on GitHub instead.
 
 ### Brand assets
 

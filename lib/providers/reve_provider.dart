@@ -37,6 +37,14 @@ class ReveProvider with ChangeNotifier {
   String _currentPath = '';
   List<GithubFileItem> _files = [];
   final Map<String, List<GithubFileItem>> _listingCache = {};
+
+  /// Logical path → release-asset metadata, read from `.reve/assets.json`.
+  Map<String, Map<String, dynamic>> _assets = {};
+  String? _assetsKey;
+  String? _assetsSha;
+  bool _assetsLoaded = false;
+  DateTime? _assetsAt;
+
   bool _isLoading = false;
   bool _isUploading = false;
   String? _errorMessage;
@@ -63,6 +71,15 @@ class ReveProvider with ChangeNotifier {
   String? get selectedBranch => _selectedBranch;
   String get currentPath => _currentPath;
   List<GithubFileItem> get files => _files;
+  /// Bytes held as release assets, for the storage meter.
+  int get assetBytes => _assets.values.fold(
+        0,
+        (sum, file) => sum + ((file['size'] as num?)?.toInt() ?? 0),
+      );
+  int get assetCount => _assets.length;
+  /// The repository's committed size (GitHub reports kilobytes) plus assets.
+  int get repoSizeBytes =>
+      (((_selectedRepo?['size'] as num?)?.toInt() ?? 0) * 1024) + assetBytes;
   bool get isLoading => _isLoading;
   bool get isUploading => _isUploading;
   String? get errorMessage => _errorMessage;
@@ -277,6 +294,15 @@ class ReveProvider with ChangeNotifier {
     _branches = [];
     _files = [];
     _listingCache.clear();
+    _resetAssets();
+  }
+
+  void _resetAssets() {
+    _assets = {};
+    _assetsKey = null;
+    _assetsSha = null;
+    _assetsLoaded = false;
+    _assetsAt = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -352,6 +378,7 @@ class ReveProvider with ChangeNotifier {
     _branches = [];
     _files = [];
     _listingCache.clear();
+    _resetAssets();
     notifyListeners();
     await fetchBranches();
   }
@@ -384,6 +411,7 @@ class ReveProvider with ChangeNotifier {
     _selectedBranch = branch;
     _currentPath = '';
     _listingCache.clear();
+    _resetAssets();
     notifyListeners();
     await fetchContents();
   }
@@ -415,6 +443,17 @@ class ReveProvider with ChangeNotifier {
         _currentPath,
         branch: _selectedBranch,
       );
+      // `.reve` only holds the asset index; it is not user content.
+      if (_currentPath.isEmpty) items.removeWhere((f) => f.name == '.reve');
+      await _loadAssets();
+      final visible = items.map((f) => f.path).toSet();
+      for (final entry in _assets.entries) {
+        final path = entry.key;
+        final parent =
+            path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+        if (parent != _currentPath || visible.contains(path)) continue;
+        items.add(GithubFileItem.fromAsset(path, entry.value));
+      }
       items.sort((a, b) {
         if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -436,6 +475,67 @@ class ReveProvider with ChangeNotifier {
   /// on the next visit and the fetch that follows a mutation repopulates the
   /// folder you are looking at.
   void invalidateListings() => _listingCache.clear();
+
+  /// Loads the asset index once per repo+branch; folder listings then merge
+  /// their slice of it without an extra request each time.
+  String get _assetKey => '$owner/$repoName/${_selectedBranch ?? ''}';
+
+  Future<void> _loadAssets({bool force = false}) async {
+    final fresh = _assetsAt != null &&
+        DateTime.now().difference(_assetsAt!) < const Duration(seconds: 15);
+    if (!force && _assetsLoaded && _assetsKey == _assetKey && fresh) return;
+    if (_activeAccount == null || _selectedRepo == null) return;
+    try {
+      final manifest = await GithubService.readAssetManifest(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        branch: _selectedBranch,
+      );
+      _assets = manifest.files;
+      _assetsSha = manifest.sha;
+    } catch (_) {
+      // The index is an enhancement: a broken or huge one must not hide the
+      // repository's real files.
+      _assets = {};
+      _assetsSha = null;
+    }
+    _assetsKey = _assetKey;
+    _assetsLoaded = true;
+    _assetsAt = DateTime.now();
+  }
+
+  /// Read-modify-write of the index with one retry when another device wins.
+  Future<void> _mutateManifest(
+    void Function(Map<String, Map<String, dynamic>> files) change,
+  ) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final manifest = await GithubService.readAssetManifest(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        branch: _selectedBranch,
+      );
+      change(manifest.files);
+      try {
+        _assetsSha = await GithubService.putAssetManifest(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          files: manifest.files,
+          sha: manifest.sha,
+          branch: _selectedBranch,
+        );
+        _assets = manifest.files;
+        _assetsKey = _assetKey;
+        _assetsLoaded = true;
+        _assetsAt = DateTime.now();
+        return;
+      } on ManifestConflict {
+        if (attempt == 1) rethrow;
+      }
+    }
+  }
 
   Future<void> navigateToFolder(String path) async {
     _currentPath = path;
@@ -481,27 +581,30 @@ class ReveProvider with ChangeNotifier {
     required Uint8List bytes,
     String? message,
   }) async {
+    if (bytes.lengthInBytes > maxUploadBytes) {
+      return uploadLargeFile(
+        fileName: fileName,
+        length: bytes.lengthInBytes,
+        bytes: bytes,
+        message: message,
+      );
+    }
+    return _uploadSmall(fileName: fileName, bytes: bytes, message: message);
+  }
+
+  Future<UploadResult> _uploadSmall({
+    required String fileName,
+    required Uint8List bytes,
+    String? message,
+  }) async {
     if (_activeAccount == null || _selectedRepo == null) {
       return const UploadResult(false, 'Connect an account and pick a repository first.');
-    }
-    if (bytes.lengthInBytes > maxUploadBytes) {
-      return UploadResult(
-        false,
-        '$fileName is ${formatBytes(bytes.lengthInBytes)} — GitHub stops at about '
-        '39 MB for a single API upload. Split it, or store it as a release asset.',
-      );
     }
 
     _isUploading = true;
     _startProgress('Uploading $fileName…');
     final path = _targetPathFor(fileName);
-    void report(double fraction) {
-      // Stop short of 100% until the upload returns: the wait for GitHub to
-      // commit the file used to sit at "100%" and look hung.
-      final shown = fraction < 0.995 ? fraction : 0.99;
-      _progressLabel = 'Uploading $fileName · ${(shown * 100).round()}%';
-      _reportProgress(shown);
-    }
+    final report = _progressReporter(fileName);
 
     try {
       try {
@@ -542,6 +645,7 @@ class ReveProvider with ChangeNotifier {
           onProgress: report,
         );
       }
+      await _dropAssetAt(path);
       invalidateListings();
       await fetchContents();
       return UploadResult(true, '$fileName uploaded to $path', path: path);
@@ -554,13 +658,166 @@ class ReveProvider with ChangeNotifier {
     }
   }
 
+  /// A committed file replaced an older asset with the same name: drop the
+  /// asset so the index cannot shadow it or leak storage.
+  Future<void> _dropAssetAt(String path) async {
+    if (!_assets.containsKey(path)) return;
+    try {
+      Map<String, dynamic>? removed;
+      await _mutateManifest((files) => removed = files.remove(path));
+      final id = (removed?['id'] as num?)?.toInt();
+      if (id == null) return;
+      await GithubService.deleteAsset(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        assetId: id,
+      );
+    } catch (_) {
+      // The committed file is live either way; a stale asset is only space.
+    }
+  }
+
+  /// The reverse: a large upload replaces a small committed file of the same
+  /// name, which would otherwise stay visible and win the listing.
+  Future<void> _dropCommittedFileAt(String path) async {
+    final parent = path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+    try {
+      final existing = await GithubService.getContents(
+        _activeAccount!.token,
+        owner,
+        repoName,
+        parent,
+        branch: _selectedBranch,
+      );
+      final match = _firstOrNull(existing, (f) => f.path == path);
+      if (match == null) return;
+      await GithubService.deleteFile(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        path: path,
+        sha: match.sha,
+        message: 'Replace $path with a large file via reve',
+        branch: _selectedBranch,
+      );
+    } catch (_) {
+      // Best effort: the asset is uploaded and indexed either way.
+    }
+  }
+
+  /// Anything over the Contents ceiling goes to the asset release, which takes
+  /// files up to 2 GB and replays them with byte ranges — so video seeks.
+  Future<UploadResult> uploadLargeFile({
+    required String fileName,
+    required int length,
+    Uint8List? bytes,
+    Stream<List<int>>? source,
+    String? message,
+  }) async {
+    if (_activeAccount == null || _selectedRepo == null) {
+      return const UploadResult(false, 'Connect an account and pick a repository first.');
+    }
+
+    _isUploading = true;
+    _startProgress('Uploading $fileName…');
+    final path = _targetPathFor(fileName);
+    final report = _progressReporter(fileName);
+
+    try {
+      final releaseId = await GithubService.ensureAssetRelease(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        branch: _selectedBranch,
+      );
+      final assetName = GithubService.assetFileName(path);
+      final uploaded = await GithubService.uploadAsset(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        releaseId: releaseId,
+        name: assetName,
+        mime: GithubService.mimeFor(fileName),
+        length: length,
+        bytes: bytes,
+        source: source,
+        onProgress: report,
+      );
+      final id = (uploaded['id'] as num).toInt();
+
+      Map<String, dynamic>? previous;
+      await _mutateManifest((files) {
+        previous = files[path];
+        files[path] = {
+          'id': id,
+          'name': assetName,
+          'size': length,
+          'mime': GithubService.mimeFor(fileName),
+          'at': DateTime.now().toUtc().toIso8601String(),
+        };
+      });
+
+      final oldId = (previous?['id'] as num?)?.toInt();
+      if (oldId != null && oldId != id) {
+        try {
+          await GithubService.deleteAsset(
+            token: _activeAccount!.token,
+            owner: owner,
+            repo: repoName,
+            assetId: oldId,
+          );
+        } catch (_) {
+          // The new asset is live; a leftover old one is only wasted space.
+        }
+      }
+
+      await _dropCommittedFileAt(path);
+      invalidateListings();
+      await fetchContents();
+      return UploadResult(true, '$fileName uploaded to $path', path: path);
+    } catch (e) {
+      _errorMessage = e.toString();
+      return UploadResult(false, e.toString());
+    } finally {
+      _isUploading = false;
+      _endProgress();
+    }
+  }
+
+  void Function(double) _progressReporter(String fileName) {
+    return (fraction) {
+      // Stop short of 100% until the upload returns: waiting for GitHub to
+      // commit the file used to sit at "100%" and look hung.
+      final shown = fraction < 0.995 ? fraction : 0.99;
+      _progressLabel = 'Uploading $fileName · ${(shown * 100).round()}%';
+      _reportProgress(shown);
+    };
+  }
+
   Future<bool> deleteItem(GithubFileItem item, {String? message}) async {
     if (_activeAccount == null || _selectedRepo == null) return false;
     _isLoading = true;
     notifyListeners();
     try {
       final msg = message ?? 'Delete ${item.path} via reve';
-      if (item.isDirectory) {
+      if (item.isAsset) {
+        Map<String, dynamic>? removed;
+        await _mutateManifest((files) => removed = files.remove(item.path));
+        final id = (removed?['id'] as num?)?.toInt();
+        if (id != null) {
+          try {
+            await GithubService.deleteAsset(
+              token: _activeAccount!.token,
+              owner: owner,
+              repo: repoName,
+              assetId: id,
+            );
+          } catch (_) {
+            // The index no longer points at it, so it is unreachable anyway.
+          }
+        }
+      } else if (item.isDirectory) {
         await GithubService.deleteDirectory(
           token: _activeAccount!.token,
           owner: owner,
@@ -569,6 +826,7 @@ class ReveProvider with ChangeNotifier {
           message: msg,
           branch: _selectedBranch,
         );
+        await _removeAssetsUnder(item.path);
       } else {
         await GithubService.deleteFile(
           token: _activeAccount!.token,
@@ -589,6 +847,35 @@ class ReveProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Removes every asset-backed file below [folder] after the folder itself
+  /// was deleted. GitHub's Contents API cannot see them, so the index is the
+  /// only place that knows they exist.
+  Future<void> _removeAssetsUnder(String folder) async {
+    final prefix = folder.endsWith('/') ? folder : '$folder/';
+    if (!_assets.keys.any((path) => path.startsWith(prefix))) return;
+    final doomed = <int>[];
+    await _mutateManifest((files) {
+      for (final path in files.keys.toList()) {
+        if (!path.startsWith(prefix)) continue;
+        final id = (files[path]?['id'] as num?)?.toInt();
+        if (id != null) doomed.add(id);
+        files.remove(path);
+      }
+    });
+    for (final id in doomed) {
+      try {
+        await GithubService.deleteAsset(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          assetId: id,
+        );
+      } catch (_) {
+        // Nothing points at it anymore.
+      }
     }
   }
 
@@ -627,7 +914,15 @@ class ReveProvider with ChangeNotifier {
       ? const {}
       : {'Authorization': 'Bearer ${_activeAccount!.token}'};
 
+  /// Public releases download straight from GitHub. Private repositories need
+  /// a signed URL, which [streamUrlFor] resolves.
   String? downloadUrlFor(GithubFileItem item) {
+    if (item.isAsset) {
+      if (_selectedRepo?['private'] == false && item.assetName != null) {
+        return GithubService.publicAssetUrl(owner, repoName, item.assetName!);
+      }
+      return null;
+    }
     if (_selectedRepo == null) return item.downloadUrl;
     final branch = _selectedBranch ??
         (_selectedRepo!['default_branch'] as String?) ??
@@ -635,6 +930,23 @@ class ReveProvider with ChangeNotifier {
     if (branch.isEmpty) return item.downloadUrl;
     return GithubService.rawUrl(owner, repoName, branch, item.path);
   }
+
+  /// URL a media player can stream. Asset files get a short-lived signed URL
+  /// with no headers attached — players redirect better when they can keep
+  /// auth out of the request.
+  Future<String?> streamUrlFor(GithubFileItem item) async {
+    if (!item.isAsset) return downloadUrlFor(item);
+    if (_activeAccount == null || _selectedRepo == null) return null;
+    return GithubService.signedAssetUrl(
+      token: _activeAccount!.token,
+      owner: owner,
+      repo: repoName,
+      assetId: item.assetId!,
+    );
+  }
+
+  Map<String, String> headersFor(GithubFileItem item) =>
+      item.isAsset ? const {} : authHeaders;
 
   /// Bytes of [item] with the shared progress bar attached. Used by both the
   /// preview (render what was read) and Download (save what was read).
@@ -649,6 +961,24 @@ class ReveProvider with ChangeNotifier {
     final verb = label ?? 'Loading ${item.name}';
     if (report) _startProgress('$verb…');
     try {
+      if (item.isAsset) {
+        final url = await GithubService.signedAssetUrl(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          assetId: item.assetId!,
+        );
+        return await GithubService.fetchAssetBytes(
+          url: url,
+          onProgress: (fraction, loaded) {
+            if (!report) return;
+            _progressLabel = fraction == null
+                ? '$verb · ${formatBytes(loaded)}'
+                : '$verb · ${(fraction * 100).round()}%';
+            _reportProgress(fraction);
+          },
+        );
+      }
       return await GithubService.fetchBytes(
         token: _activeAccount!.token,
         owner: owner,
