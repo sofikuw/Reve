@@ -193,6 +193,76 @@ jobs:
           ls -lh out
           cat out/codes.txt
 
+      - name: Categorized summary of changes
+        run: |
+          python3 - "${{ steps.ver.outputs.version }}" "${{ inputs.release_channel }}" > summary.md <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          version, channel = sys.argv[1], sys.argv[2]
+
+
+          def run(*args):
+              return subprocess.run(args, capture_output=True, text=True)
+
+
+          rng = None
+          head = run("git", "rev-parse", "HEAD").stdout.strip()
+          if head:
+              # Use the highest previous build whose tag is still an ancestor
+              # of HEAD, so the summary lists only what is new since then.
+              tags = run("git", "tag", "-l", f"v{version}-{channel}.*").stdout.split()
+              for t in sorted(tags, reverse=True):
+                  ok = run(
+                      "git", "merge-base", "--is-ancestor", f"refs/tags/{t}", head
+                  ).returncode == 0
+                  if ok:
+                      rng = f"{t}..HEAD"
+                      break
+
+          cmd = ["git", "log", "--pretty=%s"]
+          if rng:
+              cmd.append(rng)
+          else:
+              cmd.extend(["-n", "50"])
+          out = run(*cmd).stdout
+          subjects = [s for s in (line.strip() for line in out.splitlines()) if s]
+
+
+          def cat(subject):
+              m = re.match(r"^(\w+)(?:\([^)]*\))?!?:?\s*(.*)$", subject)
+              typ = m.group(1).lower() if m else ""
+              if m and typ == "feat":
+                  return "added"
+              if m and typ == "fix":
+                  return "fixed"
+              if m and typ in ("refactor", "perf", "style"):
+                  return "changed"
+              if re.search(r"\b(remove|removed|deleted?|drop(?:ped|s)?|clean ?up)\b", subject, re.I):
+                  return "removed"
+              return "other"
+
+
+          sections = {"added": [], "changed": [], "fixed": [], "removed": [], "other": []}
+          for s in subjects:
+              sections[cat(s)].append(s)
+
+          for key, title in (
+              ("added", "Added"),
+              ("changed", "Changed"),
+              ("fixed", "Fixed"),
+              ("removed", "Removed"),
+              ("other", "Other"),
+          ):
+              if not sections[key]:
+                  continue
+              print(f"### {title}\n")
+              for s in sections[key]:
+                  print(f"- {s}")
+              print()
+          PY
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -205,6 +275,7 @@ jobs:
 
           {
             printf '**reve %s · %s #%s**\n\n' "$version" "$CHANNEL" "$build"
+            if [ -s summary.md ]; then cat summary.md; echo; fi
             printf "Split APKs: install the one that matches your phone's CPU.\n\n"
             printf '| APK | Version code | Use it for |\n'
             printf '| --- | --- | --- |\n'

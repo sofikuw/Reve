@@ -23,6 +23,17 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   bool _grid = false;
   bool _announcedUpdate = false;
 
+  /// Browsing aids: the folder listing is filtered and sorted in memory, so a
+  /// big folder does not cost a request per keystroke.
+  bool _searching = false;
+  String _query = '';
+  String _filter = 'all';
+  String _sort = 'name';
+  final TextEditingController _searchController = TextEditingController();
+
+  /// Paths picked with a long press. Empty means the normal browsing mode.
+  final Set<String> _selected = {};
+
   ReveProvider get _provider => context.read<ReveProvider>();
 
   @override
@@ -38,6 +49,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     _provider.removeListener(_announceUpdate);
     super.dispose();
   }
@@ -62,7 +74,9 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: _selected.isNotEmpty
+          ? _selectionBar(provider, cs)
+          : AppBar(
         titleSpacing: 16,
         title: Row(
           children: [
@@ -181,11 +195,12 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           : Column(
               children: [
                 _breadcrumbs(provider, cs),
+                if (_searching) _searchRow(provider, cs),
                 _transferBar(provider, cs),
                 Expanded(child: _fileArea(provider, cs)),
               ],
             ),
-      floatingActionButton: provider.accounts.isEmpty
+      floatingActionButton: provider.accounts.isEmpty || _selected.isNotEmpty
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
@@ -218,6 +233,228 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   // Chrome
   // ---------------------------------------------------------------------------
 
+  /// Replaces the app bar while files are selected, the way a gallery does.
+  PreferredSizeWidget _selectionBar(ReveProvider provider, ColorScheme cs) {
+    final picked =
+        provider.files.where((f) => _selected.contains(f.path)).toList();
+    final hasFiles = picked.any((f) => !f.isDirectory);
+    return AppBar(
+      leading: IconButton(
+        tooltip: 'Cancel selection',
+        icon: const Icon(Icons.close),
+        onPressed: _clearSelection,
+      ),
+      title: Text('${_selected.length} selected'),
+      actions: [
+        IconButton(
+          tooltip: 'Select all',
+          icon: const Icon(Icons.select_all),
+          onPressed: () => setState(() {
+            _selected
+              ..clear()
+              ..addAll(_visibleFiles(provider).map((f) => f.path));
+          }),
+        ),
+        IconButton(
+          tooltip: 'Download selected',
+          icon: const Icon(Icons.download_outlined),
+          onPressed: hasFiles ? () => _downloadSelected(provider, picked) : null,
+        ),
+        IconButton(
+          tooltip: 'Delete selected',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () => _deleteSelected(provider, picked),
+        ),
+      ],
+    );
+  }
+
+  static const List<(String, String)> _filters = [
+    ('all', 'All'),
+    ('image', 'Photos'),
+    ('video', 'Video'),
+    ('audio', 'Audio'),
+    ('doc', 'Docs'),
+    ('archive', 'Archives'),
+    ('code', 'Code'),
+    ('folder', 'Folders'),
+  ];
+
+  Widget _searchRow(ReveProvider provider, ColorScheme cs) {
+    return Container(
+      color: cs.surfaceContainerLow,
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  style: const TextStyle(fontSize: 14),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Search this folder',
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear',
+                            icon: const Icon(Icons.backspace_outlined, size: 18),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  ),
+                  onChanged: (value) => setState(() => _query = value),
+                ),
+              ),
+              const SizedBox(width: 4),
+              PopupMenuButton<String>(
+                tooltip: 'Sort',
+                icon: const Icon(Icons.sort),
+                onSelected: (value) => setState(() => _sort = value),
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'name', child: Text('Name')),
+                  PopupMenuItem(value: 'size', child: Text('Size, largest first')),
+                  PopupMenuItem(value: 'type', child: Text('Type')),
+                ],
+              ),
+            ],
+          ),
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _filters.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 6),
+              itemBuilder: (context, index) {
+                final (value, label) = _filters[index];
+                return ChoiceChip(
+                  label: Text(label, style: const TextStyle(fontSize: 12)),
+                  selected: _filter == value,
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) => setState(() => _filter = value),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The listing after the search box, the type chips and the sort order.
+  List<GithubFileItem> _visibleFiles(ReveProvider provider) {
+    final query = _query.trim().toLowerCase();
+    final list = provider.files.where((item) {
+      if (_filter == 'folder') {
+        if (!item.isDirectory) return false;
+      } else if (_filter != 'all') {
+        if (item.isDirectory || _kindOf(item) != _filter) return false;
+      }
+      if (query.isEmpty) return true;
+      return item.name.toLowerCase().contains(query) ||
+          item.path.toLowerCase().contains(query);
+    }).toList();
+
+    if (_sort == 'size') {
+      list.sort((a, b) => b.size.compareTo(a.size));
+    } else if (_sort == 'type') {
+      list.sort((a, b) {
+        if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
+        final byKind = _kindOf(a).compareTo(_kindOf(b));
+        if (byKind != 0) return byKind;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    }
+    return list;
+  }
+
+  void _clearSelection() {
+    if (_selected.isEmpty) return;
+    setState(_selected.clear);
+  }
+
+  void _toggleSelection(GithubFileItem item) {
+    setState(() {
+      if (!_selected.remove(item.path)) _selected.add(item.path);
+    });
+  }
+
+  Future<void> _downloadSelected(
+    ReveProvider provider,
+    List<GithubFileItem> picked,
+  ) async {
+    final files = picked.where((f) => !f.isDirectory).toList();
+    if (files.isEmpty) {
+      _snack('Nothing to download');
+      return;
+    }
+    var saved = 0;
+    for (final item in files) {
+      if (!mounted) return;
+      try {
+        final bytes = await provider.readBytes(item, label: 'Downloading ${item.name}');
+        if (!mounted) return;
+        final path = await FilePicker.saveFile(
+          dialogTitle: 'Save ${item.name}',
+          fileName: item.name,
+          bytes: bytes,
+        );
+        if (path != null) saved++;
+      } catch (e) {
+        _snack('Could not download ${item.name}: $e');
+        break;
+      }
+    }
+    _clearSelection();
+    _snack(saved == 1 ? 'Saved 1 file' : 'Saved $saved files');
+  }
+
+  Future<void> _deleteSelected(
+    ReveProvider provider,
+    List<GithubFileItem> picked,
+  ) async {
+    if (picked.isEmpty) return;
+    final folders = picked.where((f) => f.isDirectory).length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${picked.length} item${picked.length == 1 ? '' : 's'}?'),
+        content: Text(
+          folders > 0
+              ? 'Folders are deleted with everything inside them. This is one commit, '
+                  'and each deleted file can be restored from GitHub history.'
+              : 'This is one commit. The files stay in GitHub history, so the delete is reversible.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    var deleted = 0;
+    for (final item in picked) {
+      final ok = await provider.deleteItem(item);
+      if (ok) deleted++;
+    }
+    _clearSelection();
+    _snack(deleted == picked.length
+        ? 'Deleted ${picked.length} item${picked.length == 1 ? '' : 's'}'
+        : 'Deleted $deleted of ${picked.length}');
+  }
+
   Widget _breadcrumbs(ReveProvider provider, ColorScheme cs) {
     final path = provider.currentPath;
     return Container(
@@ -229,15 +466,36 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             tooltip: 'Repository root',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.home_outlined, size: 20),
-            onPressed: () => provider.navigateToFolder(''),
+            onPressed: () {
+              _clearSelection();
+              provider.navigateToFolder('');
+            },
           ),
           if (path.isNotEmpty)
             IconButton(
               tooltip: 'Up one level',
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.arrow_upward, size: 20),
-              onPressed: provider.navigateUp,
+              onPressed: () {
+                _clearSelection();
+                provider.navigateUp();
+              },
             ),
+          IconButton(
+            tooltip: _searching ? 'Close search' : 'Search this folder',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.search, size: 20),
+            onPressed: () {
+              setState(() => _searching = !_searching);
+              if (_searching) _searchController.clear();
+              else {
+                _query = '';
+                _filter = 'all';
+                _searchController.clear();
+                _clearSelection();
+              }
+            },
+          ),
           const SizedBox(width: 2),
           Expanded(
             child: SingleChildScrollView(
@@ -252,7 +510,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: Text(
-                '${provider.files.length}',
+                '${_visibleFiles(provider).length}',
                 style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
               ),
             ),
@@ -334,6 +592,19 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         ),
       );
     }
+    if (provider.offlineItems.isNotEmpty && provider.files.isEmpty) {
+      return _Prompt(
+        icon: Icons.cloud_off_outlined,
+        title: 'Offline view',
+        body: 'No connection right now. This is the last saved list of '
+            '${provider.currentPath.isEmpty ? 'the root folder' : '/${provider.currentPath}'}'
+            '${provider.offlineSince.isEmpty ? '' : ' · ${provider.offlineSince}'}.',
+        action: FilledButton(
+          onPressed: () => provider.fetchContents(),
+          child: const Text('Try again'),
+        ),
+      );
+    }
     if (provider.files.isEmpty) {
       return _Prompt(
         icon: Icons.folder_open_outlined,
@@ -348,6 +619,27 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       );
     }
 
+    final files = _visibleFiles(provider);
+    if (files.isEmpty &&
+        (provider.files.isNotEmpty ||
+            _query.isNotEmpty ||
+            _filter != 'all')) {
+      return _Prompt(
+        icon: Icons.search_off,
+        title: 'No matches',
+        body: 'Nothing in this folder matches the search or filter.',
+        action: FilledButton(
+          onPressed: () => setState(() {
+            _query = '';
+            _filter = 'all';
+            _searchController.clear();
+            _searching = false;
+          }),
+          child: const Text('Clear and show all'),
+        ),
+      );
+    }
+
     if (_grid) {
       return GridView.builder(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 120),
@@ -357,21 +649,25 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           crossAxisSpacing: 10,
           childAspectRatio: 0.92,
         ),
-        itemCount: provider.files.length,
-        itemBuilder: (context, index) => _GridCard(
-          item: provider.files[index],
-          url: provider.downloadUrlFor(provider.files[index]),
-          onTap: () => _activate(provider, provider.files[index]),
-          onLongPress: () => _showItemSheet(provider, provider.files[index]),
-        ),
+        itemCount: files.length,
+        itemBuilder: (context, index) {
+          final item = files[index];
+          return _GridCard(
+            item: item,
+            url: provider.downloadUrlFor(item),
+            selected: _selected.contains(item.path),
+            onTap: () => _activate(provider, item),
+            onLongPress: () => _onLongPress(item),
+          );
+        },
       );
     }
 
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 120),
-      itemCount: provider.files.length,
+      itemCount: files.length,
       itemBuilder: (context, index) {
-        final item = provider.files[index];
+        final item = files[index];
         return ListTile(
           leading: _leading(item),
           title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -382,11 +678,13 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             style: const TextStyle(fontSize: 11.5),
           ),
           onTap: () => _activate(provider, item),
-          onLongPress: () => _showItemSheet(provider, item),
+          onLongPress: () => _onLongPress(item),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (!item.isDirectory)
+              if (_selected.contains(item.path))
+                Icon(Icons.check_circle, size: 20, color: Theme.of(context).colorScheme.primary)
+              else if (!item.isDirectory)
                 IconButton(
                   tooltip: 'Download',
                   icon: const Icon(Icons.download_outlined, size: 20),
@@ -415,6 +713,17 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   }
 
   Widget _leading(GithubFileItem item) {
+    if (_selected.contains(item.path)) {
+      return Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.check_circle, size: 21),
+      );
+    }
     final kind = _kindOf(item);
     final (icon, color) = switch (kind) {
       'dir' => (Icons.folder, const Color(0xFFF2B429)),
@@ -442,11 +751,19 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   // ---------------------------------------------------------------------------
 
   Future<void> _activate(ReveProvider provider, GithubFileItem item) async {
+    if (_selected.isNotEmpty) {
+      _toggleSelection(item);
+      return;
+    }
     if (item.isDirectory) {
       await provider.navigateToFolder(item.path);
     } else {
       await _showItemSheet(provider, item);
     }
+  }
+
+  void _onLongPress(GithubFileItem item) {
+    setState(() => _selected.add(item.path));
   }
 
   Future<void> _onAction(ReveProvider provider, GithubFileItem item, String value) async {
@@ -584,7 +901,30 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     if (confirmed != true) return;
 
     final ok = await provider.deleteItem(item);
-    _snack(ok ? '${item.name} deleted' : (provider.errorMessage ?? 'Delete failed'));
+    _snack('${item.name} deleted');
+    if (ok && provider.lastDeleted != null) {
+      _offerUndo(provider);
+    } else if (!ok) {
+      _snack(provider.errorMessage ?? 'Delete failed');
+    }
+  }
+
+  /// A short-lived "Undo" toast for a restorable delete.
+  void _offerUndo(ReveProvider provider) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 12),
+        content: const Text('Deleted — Undo restores it from Git history'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            final restored = await provider.undoDelete();
+            if (mounted) _snack(restored ? 'Restored' : 'Could not restore');
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _upload(ReveProvider provider) async {
@@ -592,58 +932,123 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       _snack('Pick a repository first');
       return;
     }
-    final List<PlatformFile> picked = await FilePicker.pickFiles();
-    if (picked.isEmpty) return;
+    var work = (await FilePicker.pickFiles()).whereType<PlatformFile>().toList();
+    if (work.isEmpty) return;
+    await _confirmReplacements(provider, work);
+    if (work.isEmpty) return;
+    await _uploadFiles(provider, work);
+  }
 
-    var ok = 0;
-    final failures = <String>[];
-    for (final file in picked) {
-      if (!mounted) return;
-      if (file.size > ReveProvider.maxUploadBytes) {
-        // Large picks stream straight from disk into a release asset, so a
-        // 500 MB film never has to sit in RAM.
-        Uint8List? bytes;
-        var stream = file.readStream;
-        if (stream == null) {
-          try {
-            bytes = await file.readAsBytes();
-          } catch (e) {
-            failures.add('${file.name}: could not read file');
-            continue;
-          }
-        }
-        final outcome = await provider.uploadLargeFile(
-          fileName: file.name,
-          length: file.size,
-          stream: stream,
-          bytes: bytes,
-        );
-        if (outcome.ok) {
-          ok++;
-        } else {
-          failures.add(outcome.message);
-        }
+  /// The picker answer can flip [work] to a shorter list; empty means "nothing
+  /// to upload".
+  Future<void> _confirmReplacements(ReveProvider provider, List<PlatformFile> work) async {
+    // If something already sits at the destination, ask once before uploading.
+    final existing = await provider.existingPaths();
+    var conflicts = work
+        .map((f) => provider.targetPathFor(f.name))
+        .where(existing.contains)
+        .length;
+    if (conflicts == 0) return;
+    final answer = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Replace ${conflicts} existing file${conflicts == 1 ? '' : 's'}?'),
+        content: Text(
+          '${provider.repoName} already has $conflicts file(s) at these paths. '
+          '"Skip" uploads only the new names.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Skip existing')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Replace')),
+        ],
+      ),
+    );
+    if (answer != true) {
+      work.removeWhere((f) => existing.contains(provider.targetPathFor(f.name)));
+      if (work.isEmpty) _snack('Nothing uploaded');
+    }
+  }
+
+  /// file_picker reports sizes lazily; some Android picks (videos) report
+  /// nothing, so we prefer the cached value and only then the stream fallback.
+  Future<int> _fileLength(PlatformFile file) async {
+    final known = file.lengthSync();
+    if (known != null) return known;
+    final fromFile = await file.length();
+    return fromFile ?? 0;
+  }
+
+  /// Streams a big file straight from disk into a release asset; buffers when
+  /// the pick cannot stream (the phone's picker returns a plain file path).
+  Future<UploadResult> _uploadLarge(
+    ReveProvider provider,
+    PlatformFile file, {
+    required int length,
+  }) async {
+    Stream<List<int>>? stream;
+    Uint8List? bytes;
+    try {
+      stream = file.readAsByteStream();
+    } catch (_) {
+      bytes = await file.readAsBytes();
+    }
+    return provider.uploadLargeFile(
+      fileName: file.name,
+      length: length,
+      source: stream,
+      bytes: bytes,
+    );
+  }
+
+  Future<void> _uploadFiles(ReveProvider provider, List<PlatformFile> work) async {
+    final failed = <PlatformFile>[];
+    final batch = <BatchedFile>[];
+    var large = 0;
+    for (final file in work) {
+      final length = await _fileLength(file);
+      if (length > ReveProvider.maxUploadBytes) {
+        // Big, and the picker told us the size: stream from disk.
+        final outcome = await _uploadLarge(provider, file, length: length);
+        if (!outcome.ok) failed.add(file);
+        large++;
         continue;
       }
-      Uint8List bytes;
+      // Read it now. Some Android picks (videos) report no size at all, so
+      // the small/large decision has to be made on the real byte count.
+      final Uint8List bytes;
       try {
         bytes = await file.readAsBytes();
       } catch (e) {
-        failures.add('${file.name}: could not read file');
+        failed.add(file);
         continue;
       }
-      final outcome = await provider.uploadFile(fileName: file.name, bytes: bytes);
-      if (outcome.ok) {
-        ok++;
-      } else {
-        failures.add(outcome.message);
+      if (bytes.lengthInBytes > ReveProvider.maxUploadBytes) {
+        final outcome = await provider.uploadLargeFile(
+          fileName: file.name,
+          length: bytes.lengthInBytes,
+          bytes: bytes,
+        );
+        if (!outcome.ok) failed.add(file);
+        large++;
+        continue;
       }
+      batch.add(BatchedFile(name: file.name, bytes: bytes));
     }
-    if (!mounted) return;
-    if (failures.isEmpty) {
-      _snack(ok == 1 ? '${picked.first.name} uploaded' : '$ok files uploaded');
-    } else {
-      _snack(failures.first);
+    if (batch.isNotEmpty) {
+      final outcome = await provider.commitBatch(batch);
+      if (outcome.failed.isNotEmpty) {
+        _snack('${outcome.failed.join(', ')}: ${outcome.error ?? 'Upload failed'}');
+      }
+      large += outcome.uploaded.length;
+    }
+    if (large > 0) {
+      _snack(large == 1 ? 'Uploaded 1 file' : 'Uploaded $large files');
+    }
+    if (failed.isNotEmpty) {
+      _snack(
+        '${failed.length} file${failed.length == 1 ? '' : 's'} not uploaded',
+        action: SnackBarAction(label: 'Retry', onPressed: () => _uploadFiles(provider, failed)),
+      );
     }
   }
 
@@ -902,21 +1307,28 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     return 'file';
   }
 
-  void _snack(String message) {
+  void _snack(String message, {SnackBarAction? action}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(SnackBar(content: Text(message), action: action));
   }
 }
 
 class _GridCard extends StatelessWidget {
   final GithubFileItem item;
   final String? url;
+  final bool selected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
-  const _GridCard({required this.item, this.url, required this.onTap, required this.onLongPress});
+  const _GridCard({
+    required this.item,
+    this.url,
+    this.selected = false,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   /// Images get a real thumbnail; everything else keeps a glyph so a folder
   /// full of videos does not pull hundreds of megabytes.
@@ -968,23 +1380,30 @@ class _GridCard extends StatelessWidget {
         onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
+            alignment: Alignment.topRight,
             children: [
               _thumb(context, cs, isDir),
-              const SizedBox(height: 10),
-              Text(
-                item.name,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, height: 1.3),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(height: 10),
+                  Text(
+                    item.name,
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, height: 1.3),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    isDir ? 'folder' : formatBytes(item.size),
+                    style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
+                  ),
+                ],
               ),
-              const SizedBox(height: 3),
-              Text(
-                isDir ? 'folder' : formatBytes(item.size),
-                style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
-              ),
+              if (selected)
+                Icon(Icons.check_circle, size: 18, color: cs.primary),
             ],
           ),
         ),
@@ -996,6 +1415,12 @@ class _GridCard extends StatelessWidget {
 class _Welcome extends StatelessWidget {
   final VoidCallback onConnect;
   const _Welcome({required this.onConnect});
+
+  static const List<(IconData, String)> _steps = [
+    (Icons.link, 'Pick a repository from the dropdown'),
+    (Icons.upload_file, 'Upload files — up to 38 MB, or any size as release assets'),
+    (Icons.preview, 'Browse and preview photos, video, PDF and documents'),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -1019,6 +1444,30 @@ class _Welcome extends StatelessWidget {
               'pick a repository, and start uploading. Nothing passes through a third-party server.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, height: 1.6, color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: Column(
+                children: [
+                  for (var i = 0; i < _steps.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 12),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(_steps[i].$1, size: 18, color: cs.primary),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _steps[i].$2,
+                            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 22),
             FilledButton.icon(
