@@ -875,6 +875,149 @@ class GithubService {
       branch: branch,
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Batched commits + undo-delete (git trees, not the Contents API)
+  // ---------------------------------------------------------------------------
+
+  /// All file paths in the branch head's tree — the conflict check for batch
+  /// uploads. A repo with no commits yet returns an empty set.
+  static Future<Set<String>> committedPaths({
+    required String token,
+    required String owner,
+    required String repo,
+    String? branch,
+  }) async {
+    final ref = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/ref/heads/${Uri.encodeComponent(branch ?? '')}'),
+      headers: _headers(token),
+    );
+    if (ref.statusCode == 404) return {};
+    if (ref.statusCode != 200) {
+      throw Exception('Could not read the repository head (${ref.statusCode}).');
+    }
+    final head =
+        (jsonDecode(ref.body) as Map<String, dynamic>)['object']['sha'] as String;
+    final commit = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/commits/$head'),
+      headers: _headers(token),
+    );
+    if (commit.statusCode != 200) {
+      throw Exception('Could not read the head commit (${commit.statusCode}).');
+    }
+    final tree = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/trees/${(jsonDecode(commit.body) as Map<String, dynamic>)['tree']['sha']}?recursive=true'),
+      headers: _headers(token),
+    );
+    if (tree.statusCode != 200) {
+      throw Exception('Could not list the repository tree (${tree.statusCode}).');
+    }
+    final entries = jsonDecode(tree.body) as Map<String, dynamic>;
+    return {
+      for (final entry in entries['tree'] as List) entry['path'] as String
+    };
+  }
+
+  /// Stages raw bytes as a git blob — the batched path skips the base64
+  /// Contents bodies (and their 4/3 overhead).
+  static Future<String> createBlob({
+    required String token,
+    required String owner,
+    required String repo,
+    required List<int> bytes,
+  }) async {
+    final response = await _post(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/blobs'),
+      headers: _headers(token),
+      body: jsonEncode({'content': base64Encode(bytes), 'encoding': 'base64'}),
+    );
+    if (response.statusCode != 201) {
+      throw Exception('Could not stage a file (${response.statusCode}).');
+    }
+    return (jsonDecode(response.body) as Map<String, dynamic>)['sha'] as String;
+  }
+
+  /// Commits [entries] (path → blob sha) as one tree plus one commit and moves
+  /// the branch to it. With no commits yet, the new commit has no parent.
+  static Future<void> commitTree({
+    required String token,
+    required String owner,
+    required String repo,
+    required Map<String, String> entries,
+    required String message,
+    String? branch,
+  }) async {
+    final refResponse = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/ref/heads/${Uri.encodeComponent(branch ?? '')}'),
+      headers: _headers(token),
+    );
+    final head = refResponse.statusCode == 404
+        ? null
+        : (jsonDecode(refResponse.body) as Map<String, dynamic>)['object']['sha'] as String;
+
+    String? baseTree;
+    if (head != null) {
+      final commitResponse = await _get(
+        Uri.parse('$baseUrl/repos/$owner/$repo/git/commits/$head'),
+        headers: _headers(token),
+      );
+      if (commitResponse.statusCode != 200) {
+        throw Exception('Could not read the head commit (${commitResponse.statusCode}).');
+      }
+      baseTree = (jsonDecode(commitResponse.body) as Map<String, dynamic>)['tree']['sha'] as String;
+    }
+
+    final treeResponse = await _post(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/trees'),
+      headers: _headers(token),
+      body: jsonEncode({
+        if (baseTree != null) 'base_tree': baseTree,
+        'tree': [
+          for (final entry in entries.entries)
+            {'path': entry.key, 'mode': '100644', 'type': 'blob', 'sha': entry.value},
+        ],
+      }),
+    );
+    if (treeResponse.statusCode != 201) {
+      throw Exception('Could not build the file tree (${treeResponse.statusCode}).');
+    }
+    final treeSha = (jsonDecode(treeResponse.body) as Map<String, dynamic>)['sha'] as String;
+
+    final commitResponse = await _post(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/commits'),
+      headers: _headers(token),
+      body: jsonEncode({
+        'message': message,
+        'tree': treeSha,
+        if (head != null) 'parents': [head],
+      }),
+    );
+    if (commitResponse.statusCode != 201) {
+      throw Exception('Could not create the commit (${commitResponse.statusCode}).');
+    }
+
+    if (branch != null && branch.isNotEmpty) {
+      final sha = (jsonDecode(commitResponse.body) as Map<String, dynamic>)['sha'] as String;
+      final refPatch = await _patch(
+        Uri.parse('$baseUrl/repos/$owner/$repo/git/refs/heads/${Uri.encodeComponent(branch)}'),
+        headers: _headers(token),
+        body: jsonEncode({'sha': sha}),
+      );
+      if (refPatch.statusCode != 200) {
+        throw Exception('Could not move the branch forward (${refPatch.statusCode}).');
+      }
+    }
+  }
+
+  static Future<http.Response> _patch(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+  }) {
+    return _withRetry(
+      () => http.patch(uri, headers: headers, body: body).timeout(_timeout),
+    );
+  }
 }
 
 class _FetchAttempt {

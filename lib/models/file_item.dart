@@ -38,6 +38,16 @@ class GithubFileItem {
         htmlUrl: json['html_url'] as String?,
       );
 
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'path': path,
+        'sha': sha,
+        'size': size,
+        'type': type,
+        'downloadUrl': downloadUrl,
+        'htmlUrl': htmlUrl,
+      };
+
   factory GithubFileItem.fromAsset(String path, Map<String, dynamic> data) =>
       GithubFileItem(
         name: path.split('/').last,

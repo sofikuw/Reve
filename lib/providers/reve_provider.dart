@@ -1,4 +1,7 @@
+import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../config.dart';
@@ -19,12 +22,15 @@ class ReveProvider with ChangeNotifier {
   static const String _activeIdKey = 'active_account_id';
   static const String _autoSortKey = 'auto_sort_uploads';
   static const String _updateChannelKey = 'update_channel';
+  static const String _pinHashKey = 'pin_hash';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
   /// 39 MiB file lands, 40 MiB comes back 422 "the file is too large to be
   /// processed". Stay one MiB below that.
   static const int maxUploadBytes = 38 * 1024 * 1024;
+  /// Older files are still undoable after a delete.
+  static const int maxUndoBytes = 8 * 1024 * 1024;
 
   final List<GithubAccount> _accounts = [];
   GithubAccount? _activeAccount;
@@ -44,6 +50,12 @@ class ReveProvider with ChangeNotifier {
   String? _assetsSha;
   bool _assetsLoaded = false;
   DateTime? _assetsAt;
+
+  /// Last listing per branch+path, kept in Hive so a failed refresh still
+  /// shows the folder offline.
+  Map<String, Map<String, dynamic>> _diskCache = {};
+  List<GithubFileItem> _offlineItems = [];
+  DateTime? _offlineAt;
 
   bool _isLoading = false;
   bool _isUploading = false;
@@ -71,6 +83,16 @@ class ReveProvider with ChangeNotifier {
   String? get selectedBranch => _selectedBranch;
   String get currentPath => _currentPath;
   List<GithubFileItem> get files => _files;
+  /// Snapshot of the last successful listing when the network failed, so the
+  /// folder can still be viewed offline.
+  List<GithubFileItem> get offlineItems => _offlineItems;
+  DateTime? get offlineAt => _offlineAt;
+  /// "just now" / "5 min ago" style age of [offlineAt], empty when none.
+  String get offlineSince {
+    if (_offlineAt == null) return '';
+    final minutes = DateTime.now().difference(_offlineAt!).inMinutes;
+    return minutes < 1 ? 'just now' : '$minutes min ago';
+  }
   /// Bytes held as release assets, for the storage meter.
   int get assetBytes => _assets.values.fold(
         0,
@@ -107,6 +129,12 @@ class ReveProvider with ChangeNotifier {
     init();
   }
 
+  String? _pinHash;
+
+  /// The salted-SHA256 of the app-lock PIN, or null when the lock is off.
+  String? get pinHash => _pinHash;
+  bool get isLocked => _pinHash != null;
+
   Future<void> init() async {
     try {
       final box = await Hive.openBox(_boxName);
@@ -119,6 +147,7 @@ class ReveProvider with ChangeNotifier {
       _updateChannel = box.get(_updateChannelKey, defaultValue: 'stable') == 'beta'
           ? UpdateChannel.beta
           : UpdateChannel.stable;
+      _pinHash = box.get(_pinHashKey);
 
       final activeId = box.get(_activeIdKey);
       if (_accounts.isNotEmpty) {
@@ -294,6 +323,7 @@ class ReveProvider with ChangeNotifier {
     _branches = [];
     _files = [];
     _listingCache.clear();
+    _offlineItems = [];
     _resetAssets();
   }
 
@@ -378,6 +408,7 @@ class ReveProvider with ChangeNotifier {
     _branches = [];
     _files = [];
     _listingCache.clear();
+    _offlineItems = [];
     _resetAssets();
     notifyListeners();
     await fetchBranches();
@@ -411,6 +442,7 @@ class ReveProvider with ChangeNotifier {
     _selectedBranch = branch;
     _currentPath = '';
     _listingCache.clear();
+    _offlineItems = [];
     _resetAssets();
     notifyListeners();
     await fetchContents();
@@ -462,13 +494,108 @@ class ReveProvider with ChangeNotifier {
           cached.length != items.length ||
           !List.generate(items.length, (i) => cached[i].sha == items[i].sha).every((same) => same);
       _listingCache[key] = items;
+      _saveDiskCache(key, items);
       if (changed) _files = items;
+      _offlineItems = [];
+      _offlineAt = null;
     } catch (e) {
       _errorMessage = e.toString();
+      // Live data is gone, but show the last saved listing rather than an
+      // empty folder.
+      _offlineItems = _diskItems(key);
+      _offlineAt = DateTime.now();
+      notifyListeners();
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// `_listingCache` partner: the disk cache that survives process restarts.
+  Future<void> _saveDiskCache(String key, List<GithubFileItem> items) async {
+    try {
+      final box = await Hive.openBox('reve_disk_cache');
+      _diskCache[key] = {
+        'at': DateTime.now().toIso8601String(),
+        'items': items.map((i) => i.toJson()).toList(),
+      };
+      await box.put(key, _diskCache[key]!);
+    } catch (_) {
+      // Caching is a nicety; never fail a refresh over it.
+    }
+  }
+
+  List<GithubFileItem> _diskItems(String key) {
+    final entry = _diskCache[key];
+    if (entry == null) return const [];
+    _offlineAt = _tryParseDate(entry['at']);
+    final items = entry['items'];
+    if (items is! List) return const [];
+    try {
+      return [
+        for (final e in items) GithubFileItem.fromJson(Map.from(e as Map))
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static DateTime? _tryParseDate(Object? value) {
+    if (value is! String || value.isEmpty) return null;
+    try {
+      return DateTime.parse(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Records the app-lock PIN as a salted SHA-256 hash — the PIN itself is
+  /// never stored, so a screenshot or memory dump of the box does not reveal it.
+  Future<void> setPin(String pin) async {
+    final error = _pinError(pin);
+    if (error != null) {
+      _errorMessage = error;
+      notifyListeners();
+      return;
+    }
+    final box = await Hive.openBox(_boxName);
+    final salt = Random().nextInt(0x100000).toRadixString(16).padLeft(5, '0');
+    final digest = crypto.sha256.convert(utf8.encode(salt + pin)).toString();
+    await box.put(_pinHashKey, '$salt:$digest');
+    _pinHash = box.get(_pinHashKey);
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  String? _pinError(String pin) {
+    if (pin.length < 4) return 'PIN must be at least 4 digits';
+    if (pin.length > 8) return 'PIN is too long';
+    if (!pin.runes.every((r) => r >= 48 && r <= 57)) {
+      return 'Use digits only';
+    }
+    return null;
+  }
+
+  /// Clears the PIN; the app opens without one.
+  Future<void> clearPin() async {
+    try {
+      final box = await Hive.openBox(_boxName);
+      await box.delete(_pinHashKey);
+    } catch (_) {
+      // Already gone.
+    }
+    _pinHash = null;
+    notifyListeners();
+  }
+
+  Future<bool> verifyPin(String pin) async {
+    final hash = _pinHash;
+    if (hash == null) return false;
+    final sep = hash.indexOf(':');
+    if (sep < 0) return false;
+    final salt = hash.substring(0, sep);
+    return crypto.sha256.convert(utf8.encode(salt + pin)).toString() ==
+        hash.substring(sep + 1);
   }
 
   /// A commit can change any ancestor listing, so drop them all. They refill
@@ -708,6 +835,105 @@ class ReveProvider with ChangeNotifier {
 
   /// Anything over the Contents ceiling goes to the asset release, which takes
   /// files up to 2 GB and replays them with byte ranges — so video seeks.
+  /// The path an upload lands on, so callers can spot collisions without
+  /// asking the Contents API first.
+  String targetPathFor(String fileName) => _targetPathFor(fileName);
+
+  /// Existing committed paths in the branch — the conflict check for the
+  /// batched upload path. Empty when offline or the tree cannot be read.
+  Future<Set<String>> existingPaths() async {
+    if (_activeAccount == null || _selectedRepo == null) return {};
+    try {
+      return await GithubService.committedPaths(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        branch: _selectedBranch,
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Uploads many small files in one git commit, no Contents API involved.
+  Future<CommitBatchOutcome> commitBatch(List<BatchedFile> files) async {
+    if (_activeAccount == null || _selectedRepo == null) {
+      return CommitBatchOutcome(
+        failed: files.map((f) => f.name).toList(),
+        error: 'Connect an account and pick a repository first.',
+      );
+    }
+    _isUploading = true;
+    _startProgress('Uploading ${files.length} files…');
+    try {
+      final total = files.fold(0, (sum, f) => sum + f.bytes.lengthInBytes);
+      final paths = files.map((f) => _targetPathFor(f.name)).toList();
+      final treeEntries = <String, String>{};
+      var sent = 0;
+      for (var i = 0; i < files.length; i++) {
+        treeEntries[paths[i]] = await GithubService.createBlob(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          bytes: files[i].bytes,
+        );
+        sent += files[i].bytes.lengthInBytes;
+        _reportProgress(total == 0 ? null : sent / total);
+      }
+      _progress = null;
+      await GithubService.commitTree(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        entries: treeEntries,
+        message: 'Upload ${files.length} files via reve',
+        branch: _selectedBranch,
+      );
+      invalidateListings();
+      await fetchContents();
+      return CommitBatchOutcome(uploaded: paths);
+    } catch (e) {
+      _errorMessage = e.toString();
+      return CommitBatchOutcome(
+        failed: files.map((f) => f.name).toList(),
+        error: e.toString(),
+      );
+    } finally {
+      _isUploading = false;
+      _endProgress();
+    }
+  }
+
+  DeletedCommit? _lastDeleted;
+
+  DeletedCommit? get lastDeleted => _lastDeleted;
+  /// Re-adds a just-deleted committed file as one tree commit, so history
+  /// (where its blob usually survives) puts it back.
+  Future<bool> undoDelete() async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    final deleted = _lastDeleted;
+    if (deleted == null) return false;
+    try {
+      await GithubService.commitTree(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        entries: {deleted.path: deleted.blobSha},
+        message: deleted.message,
+        branch: _selectedBranch,
+      );
+      _lastDeleted = null;
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  /// Anything over the Contents ceiling goes to the asset release, which takes
+  /// files up to 2 GB and replays them with byte ranges — so video seeks.
   Future<UploadResult> uploadLargeFile({
     required String fileName,
     required int length,
@@ -836,6 +1062,15 @@ class ReveProvider with ChangeNotifier {
           sha: item.sha,
           message: msg,
           branch: _selectedBranch,
+        );
+      }
+      // Restorable only while the blob may still exist in the history of a
+      // committed file — assets are gone, folders are not inlined back.
+      if (!item.isAsset && !item.isDirectory && item.size <= maxUndoBytes) {
+        _lastDeleted = DeletedCommit(
+          path: item.path,
+          blobSha: item.sha,
+          message: 'Restore ${item.path} via reve',
         );
       }
       invalidateListings();
@@ -1006,4 +1241,40 @@ class UploadResult {
   final String? path;
 
   const UploadResult(this.ok, this.message, {this.path});
+}
+
+/// One file picked for the batched upload path.
+class BatchedFile {
+  final String name;
+  final Uint8List bytes;
+
+  const BatchedFile({required this.name, required this.bytes});
+}
+
+/// The outcome of one [ReveProvider.commitBatch]: [uploaded] are the
+/// committed paths, [failed] the names that did not land.
+class CommitBatchOutcome {
+  final List<String> uploaded;
+  final List<String> failed;
+  final String? error;
+
+  const CommitBatchOutcome({
+    this.uploaded = const [],
+    this.failed = const [],
+    this.error,
+  });
+}
+
+/// What the user can undo: the path and blob sha of one file deleted through
+/// the Contents API, plus the message GitHub reports in the commit history.
+class DeletedCommit {
+  final String path;
+  final String blobSha;
+  final String message;
+
+  const DeletedCommit({
+    required this.path,
+    required this.blobSha,
+    required this.message,
+  });
 }

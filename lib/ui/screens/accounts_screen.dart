@@ -100,9 +100,71 @@ class _AccountsScreenState extends State<AccountsScreen> {
             }),
           const SizedBox(height: 18),
           _buildSignIn(cs),
+          _buildAppLock(provider, cs),
         ],
       ),
     );
+  }
+
+  Widget _buildAppLock(ReveProvider provider, ColorScheme cs) {
+    final locked = provider.isLocked;
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(
+          locked ? Icons.lock : Icons.lock_open_outlined,
+          color: locked ? cs.error : cs.primary,
+        ),
+        title: Text(locked ? 'App lock: on' : 'App lock'),
+        subtitle: const Text('Ask for a PIN when the app resumes'),
+        onTap: () => _setAppLock(provider),
+      ),
+    );
+  }
+
+  Future<void> _setAppLock(ReveProvider provider) async {
+    final controller = TextEditingController();
+    final pin = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(provider.isLocked ? 'App lock' : 'Enable app lock'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: '4–8 digit PIN',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (pin == null) return;
+    final trimmed = pin.trim();
+    if (trimmed.isEmpty) {
+      await provider.clearPin();
+      _snack('App lock off');
+      return;
+    }
+    await provider.setPin(trimmed);
+    if (mounted) {
+      final error = provider.errorMessage;
+      _snack(error ?? 'App lock: on');
+    }
   }
 
   Widget _buildSignIn(ColorScheme cs) {
