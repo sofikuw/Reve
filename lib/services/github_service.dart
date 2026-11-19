@@ -25,6 +25,8 @@ class DeviceAuthorization {
 class GithubService {
   static const String baseUrl = 'https://api.github.com';
   static const Duration _timeout = Duration(seconds: 30);
+  /// A whole file body has to finish uploading inside this window.
+  static const Duration _uploadTimeout = Duration(minutes: 5);
 
   /// Android aborts sockets eagerly — when the app is backgrounded (we launch
   /// the browser during device login), when a proxy/VPN resets the TLS
@@ -414,8 +416,8 @@ class GithubService {
   // Mutations
   // ---------------------------------------------------------------------------
 
-  /// Uploads one file. The body is written in chunks so [onProgress] can drive
-  /// a determinate bar — `http.put` would send it all before the first report.
+  /// Uploads one file. The body is written in chunks while it is being sent so
+  /// [onProgress] can drive a determinate bar — `http.put` reports nothing.
   static Future<void> uploadFile({
     required String token,
     required String owner,
@@ -443,22 +445,27 @@ class GithubService {
 
     final client = http.Client();
     try {
-      // Fill the request before sending: a StreamedRequest buffers its sink, so
-      // the bar animates per chunk and nothing is left unhandled if `send`
-      // fails before we await it.
+      // Send first, then feed the body. `sink.close()` only completes once the
+      // request has been written, so awaiting it before `send` deadlocks: the
+      // bar hits 100% and nothing ever reaches GitHub.
+      final pending = client.send(request).timeout(_uploadTimeout);
       const chunkSize = 96 * 1024;
-      for (var offset = 0; offset < body.length; offset += chunkSize) {
-        final end = offset + chunkSize < body.length ? offset + chunkSize : body.length;
-        request.sink.add(body.sublist(offset, end));
-        onProgress?.call(end / body.length);
-        await Future<void>.delayed(Duration.zero);
+      try {
+        for (var offset = 0; offset < body.length; offset += chunkSize) {
+          final end =
+              offset + chunkSize < body.length ? offset + chunkSize : body.length;
+          request.sink.add(body.sublist(offset, end));
+          onProgress?.call(end / body.length);
+          await Future<void>.delayed(Duration.zero);
+        }
+      } finally {
+        unawaited(request.sink.close());
       }
-      await request.sink.close();
 
-      final response = await client.send(request).timeout(_timeout);
-      final text = await response.stream.bytesToString();
+      final response = await pending;
+      final text = await response.stream.bytesToString().timeout(_timeout);
       if (response.statusCode != 200 && response.statusCode != 201) {
-        throw Exception('Upload failed: $text');
+        throw Exception('Upload failed (${response.statusCode}): $text');
       }
     } finally {
       client.close();
