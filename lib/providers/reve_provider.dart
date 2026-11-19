@@ -510,12 +510,16 @@ class ReveProvider with ChangeNotifier {
           onProgress: report,
         );
       } on Exception {
-        // The path may already exist: fetch its blob sha and overwrite.
+        // The path may already exist: fetch its blob sha and overwrite. Look in
+        // the file's own folder — auto-sort puts uploads under images/ etc., so
+        // the folder on screen is not where the file lands.
+        final parent =
+            path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '';
         final existing = await GithubService.getContents(
           _activeAccount!.token,
           owner,
           repoName,
-          _currentPath,
+          parent,
           branch: _selectedBranch,
         );
         final match = _firstOrNull(existing, (f) => f.path == path);
