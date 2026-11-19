@@ -244,7 +244,7 @@ publishes them as a GitHub release. Three inputs:
 | --- | --- |
 | `release_channel` | `alpha`, `beta` or `stable` — alpha/beta are marked as pre-releases, stable becomes *latest* |
 | `version` | version **name**, e.g. `1.0.0`; blank uses `pubspec.yaml`. Passed as `--build-name`, so the pubspec is never edited |
-| `version_code` | Android version code; blank derives `(major*10000 + minor*100 + patch) * 10000 + rank*1000 + build` (see below) |
+| `version_code` | Android version code; blank derives `100000000 + (major*10000 + minor*100 + patch) * 10000 + rank*1000 + build` (see below) |
 
 Each run numbers itself per version **and** channel (`#001`, `#002`, …) by
 looking at the existing tags, so the release title always says which build is
@@ -275,6 +275,13 @@ different code. The workflow reads the real one back with `aapt2 dump badging`
 and lists it per APK in the release notes, rather than quoting the number it
 computed.
 
+The leading `100000000` epoch exists because the version line restarted at
+`1.0.0`; the abandoned `1.2.x` / `1.3.x` builds shipped codes near
+`103000000`, so without it the first `1.0.0` would be a downgrade and Android
+would refuse to install it over them. `1.0.0-beta.001` therefore becomes
+`200001001` (`200003001` on arm64) — above every older build, below Android's
+2.1e9 ceiling.
+
 - Optional repository variable `OAUTH_CLIENT_ID` enables the device flow.
 - Required repository secret `ANDROID_KEYSTORE_B64`: a base64 PKCS12 keystore
   written to `~/.android/debug.keystore` before the build. Every release must be
@@ -294,10 +301,21 @@ computed.
   Keep that keystore: losing it means every later release needs another
   uninstall. Builds published before the key existed were signed with a
   throwaway key, so those need to be uninstalled once; everything signed with
-  this key upgrades in place.
+  this key upgrades in place. The abandoned `1.2.x` / `1.3.x` releases are kept
+  as drafts, so the updater only ever offers the `1.0.0` line.
 
 - The first run generates the missing `android/` platform folder with
   `flutter create --platforms=android .`, so nothing extra is committed.
+
+### Versioning
+
+The app started at `1.0.0` (beta #001). A release only moves the version on
+when it carries **at least five** user-facing changes — new, removed or
+visibly different features, not fixes, refactors or CI edits. Those releases
+bump by `0.0.1`; anything smaller ships as another build (`#002`, `#003`, …) of
+the same version. `pubspec.yaml` holds the number; the workflow derives the
+tag, APK names and build number from it, so passing `version` is only for
+one-offs.
 
 ### Locally
 
@@ -345,8 +363,8 @@ start-up and on every refresh. When something newer exists, a snackbar offers
 | on | alpha + beta + stable, newest of them wins |
 
 Comparison is semver first, then channel (alpha < beta < stable), then build
-number, so a stable `1.3.0` beats `1.3.0-beta.004`, which beats
-`1.3.0-alpha.004`. *Download* opens the release page in the browser; pick the
+number, so a stable `1.0.0` beats `1.0.0-beta.004`, which beats
+`1.0.0-alpha.004`. *Download* opens the release page in the browser; pick the
 APK that matches the phone's CPU and it installs over the current build without
 touching accounts, as long as both builds were signed with the same key (see
 `ANDROID_KEYSTORE_B64` above).

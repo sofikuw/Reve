@@ -105,7 +105,7 @@ class Updater {
     return best;
   }
 
-  /// Tags look like `v1.3.0-beta.004`; anything else is ignored rather than
+  /// Tags look like `v1.0.0-beta.004`; anything else is ignored rather than
   /// guessed at.
   static UpdateInfo? fromRelease(Map<String, dynamic> release) {
     final tag = (release['tag_name'] as String?)?.trim() ?? '';
