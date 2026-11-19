@@ -493,8 +493,11 @@ class ReveProvider with ChangeNotifier {
     _startProgress('Uploading $fileName…');
     final path = _targetPathFor(fileName);
     void report(double fraction) {
-      _progressLabel = 'Uploading $fileName · ${(fraction * 100).round()}%';
-      _reportProgress(fraction);
+      // Stop short of 100% until the upload returns: the wait for GitHub to
+      // commit the file used to sit at "100%" and look hung.
+      final shown = fraction < 0.995 ? fraction : 0.99;
+      _progressLabel = 'Uploading $fileName · ${(shown * 100).round()}%';
+      _reportProgress(shown);
     }
 
     try {
