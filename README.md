@@ -457,9 +457,9 @@ web/                              Flutter web shell (index.html, manifest)
 
 ## License
 
-Copyright (C) 2026 Peaqism. All rights reserved.
+Copyright (C) 2026 Peakism. All rights reserved.
 
-Released under the **Peaqism Proprietary License 1.0** — see [LICENSE](LICENSE).
+Released under the **Peakism Proprietary License 1.0** — see [LICENSE](LICENSE).
 Evaluating, reading and referencing the source is allowed; reuse, redistribution
 and deployment are not, without written permission.
 
