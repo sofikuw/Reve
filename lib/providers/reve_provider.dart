@@ -515,6 +515,31 @@ class ReveProvider with ChangeNotifier {
           visible.add(display);
         }
       }
+      // Auto-sort files into images/, videos/ etc. without committing a tree
+      // entry for the folder: GitHub's contents API cannot navigate a folder
+      // that only exists as an asset path, so make it here instead.
+      final prefix = _currentPath.isEmpty ? '' : '$_currentPath/';
+      final folders = <String>{};
+      for (final path in _assets.keys) {
+        if (prefix.isNotEmpty && !path.startsWith(prefix)) continue;
+        final rest = prefix.isEmpty ? path : path.substring(prefix.length);
+        final slash = rest.indexOf('/');
+        if (slash <= 0) continue;
+        final name = rest.substring(0, slash);
+        final dir = prefix.isEmpty ? name : '$_currentPath/$name';
+        if (visible.contains(dir)) continue;
+        folders.add(dir);
+      }
+      for (final dir in folders) {
+        items.add(GithubFileItem(
+          name: dir.split('/').last,
+          path: dir,
+          sha: '',
+          size: 0,
+          type: 'dir',
+        ));
+        visible.add(dir);
+      }
       items.sort((a, b) {
         if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
