@@ -46,6 +46,9 @@ class ReveProvider with ChangeNotifier {
 
   /// Logical path → release-asset metadata, read from `.reve/assets.json`.
   Map<String, Map<String, dynamic>> _assets = {};
+  /// Everything the release itself holds, including assets the index does not
+  /// mention (a failed index write, or an upload from another device).
+  List<Map<String, dynamic>> _releaseAssets = [];
   String? _assetsKey;
   String? _assetsSha;
   bool _assetsLoaded = false;
@@ -333,6 +336,7 @@ class ReveProvider with ChangeNotifier {
 
   void _resetAssets() {
     _assets = {};
+    _releaseAssets = [];
     _assetsKey = null;
     _assetsSha = null;
     _assetsLoaded = false;
@@ -490,6 +494,27 @@ class ReveProvider with ChangeNotifier {
         if (parent != _currentPath || visible.contains(path)) continue;
         items.add(GithubFileItem.fromAsset(path, entry.value));
       }
+      // Anything the release holds but the index lost is still the user's file:
+      // show it at the root under its original name so it is never invisible.
+      if (_currentPath.isEmpty) {
+        final indexed = _assets.values
+            .map((entry) => (entry['id'] as num?)?.toInt())
+            .whereType<int>()
+            .toSet();
+        for (final asset in _releaseAssets) {
+          final id = (asset['id'] as num?)?.toInt();
+          if (id == null || indexed.contains(id)) continue;
+          final name = (asset['name'] as String?) ?? 'asset-$id';
+          final display = GithubService.assetDisplayName(name);
+          if (visible.contains(display)) continue;
+          items.add(GithubFileItem.fromAsset(display, {
+            'id': id,
+            'name': name,
+            'size': (asset['size'] as num?)?.toInt() ?? 0,
+          }));
+          visible.add(display);
+        }
+      }
       items.sort((a, b) {
         if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
         return a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -620,21 +645,39 @@ class ReveProvider with ChangeNotifier {
         DateTime.now().difference(_assetsAt!) < const Duration(seconds: 15);
     if (!force && _assetsLoaded && _assetsKey == _assetKey && fresh) return;
     if (_activeAccount == null || _selectedRepo == null) return;
-    try {
-      final manifest = await GithubService.readAssetManifest(
-        token: _activeAccount!.token,
-        owner: owner,
-        repo: repoName,
-        branch: _selectedBranch,
-      );
-      _assets = manifest.files;
-      _assetsSha = manifest.sha;
-    } catch (_) {
-      // The index is an enhancement: a broken or huge one must not hide the
-      // repository's real files.
-      _assets = {};
-      _assetsSha = null;
-    }
+    AssetManifest? manifest;
+    var releaseAssets = <Map<String, dynamic>>[];
+    // The index and the release are independent: either one alone is enough to
+    // show a large file, so a failure in one must not blank the other.
+    await Future.wait([
+      () async {
+        try {
+          manifest = await GithubService.readAssetManifest(
+            token: _activeAccount!.token,
+            owner: owner,
+            repo: repoName,
+            branch: _selectedBranch,
+          );
+        } catch (_) {
+          // The index is an enhancement: a broken or huge one must not hide
+          // the repository's real files.
+        }
+      }(),
+      () async {
+        try {
+          releaseAssets = await GithubService.listReleaseAssets(
+            token: _activeAccount!.token,
+            owner: owner,
+            repo: repoName,
+          );
+        } catch (_) {
+          // No large-file release yet, or no permission to read it.
+        }
+      }(),
+    ]);
+    _assets = manifest?.files ?? {};
+    _assetsSha = manifest?.sha;
+    _releaseAssets = releaseAssets;
     _assetsKey = _assetKey;
     _assetsLoaded = true;
     _assetsAt = DateTime.now();
@@ -957,6 +1000,24 @@ class ReveProvider with ChangeNotifier {
     _startProgress('Uploading $fileName…');
     final path = _targetPathFor(fileName);
     final report = _progressReporter(fileName);
+    // A picker that cannot tell us the size leaves length at 0; the request is
+    // sent chunked and we count the bytes as they go, so the index still knows
+    // how large the upload really was.
+    var size = length > 0 ? length : (bytes?.lengthInBytes ?? 0);
+    Stream<List<int>>? body = source;
+    if (length <= 0 && source != null) {
+      body = source.map((chunk) {
+        size += chunk.length;
+        return chunk;
+      });
+    }
+    void progress(double? fraction) {
+      if (fraction == null) {
+        _reportProgress(null);
+      } else {
+        report(fraction);
+      }
+    }
 
     try {
       final releaseId = await GithubService.ensureAssetRelease(
@@ -975,22 +1036,28 @@ class ReveProvider with ChangeNotifier {
         mime: GithubService.mimeFor(fileName),
         length: length,
         bytes: bytes,
-        source: source,
-        onProgress: report,
+        source: body,
+        onProgress: progress,
       );
       final id = (uploaded['id'] as num).toInt();
 
       Map<String, dynamic>? previous;
-      await _mutateManifest((files) {
-        previous = files[path];
-        files[path] = {
-          'id': id,
-          'name': assetName,
-          'size': length,
-          'mime': GithubService.mimeFor(fileName),
-          'at': DateTime.now().toUtc().toIso8601String(),
-        };
-      });
+      try {
+        await _mutateManifest((files) {
+          previous = files[path];
+          files[path] = {
+            'id': id,
+            'name': assetName,
+            'size': size,
+            'mime': GithubService.mimeFor(fileName),
+            'at': DateTime.now().toUtc().toIso8601String(),
+          };
+        });
+      } catch (_) {
+        // The asset is live either way, and the listing falls back to the
+        // release's own asset list — losing the upload over a failed index
+        // write would waste the bandwidth the user just spent.
+      }
 
       final oldId = (previous?['id'] as num?)?.toInt();
       if (oldId != null && oldId != id) {

@@ -7,6 +7,7 @@ import 'providers/reve_provider.dart';
 import 'services/dns_fallback.dart';
 import 'ui/screens/explorer_screen.dart';
 import 'ui/screens/lock_screen.dart';
+import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,21 +66,8 @@ class _ReveAppState extends State<ReveApp> with WidgetsBindingObserver {
       title: 'reve — GitHub cloud storage',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF5B3FD6),
-          brightness: Brightness.light,
-        ),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF5B3FD6),
-          brightness: Brightness.dark,
-          surface: const Color(0xFF101014),
-        ),
-      ),
+      theme: reveTheme(Brightness.light),
+      darkTheme: reveTheme(Brightness.dark),
       home: _locked
           ? LockScreen(onUnlock: () => setState(() => _locked = false))
           : const ExplorerScreen(),

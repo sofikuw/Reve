@@ -472,6 +472,58 @@ class GithubService {
       'https://github.com/$owner/$repo/releases/download/$assetTag/'
       '${Uri.encodeComponent(assetName)}';
 
+  /// Every asset currently in the large-file release, newest last. The
+  /// committed index says where each one belongs; when it is missing or was
+  /// never written, this is what keeps the file visible in the app.
+  static Future<List<Map<String, dynamic>>> listReleaseAssets({
+    required String token,
+    required String owner,
+    required String repo,
+  }) async {
+    final found = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/releases/tags/$assetTag'),
+      headers: _headers(token),
+    );
+    if (found.statusCode == 404) return const [];
+    if (found.statusCode != 200) {
+      throw Exception('Could not read the large-file store (${found.statusCode}).');
+    }
+    final releaseId =
+        (jsonDecode(found.body) as Map<String, dynamic>)['id'] as int;
+    final out = <Map<String, dynamic>>[];
+    for (var page = 1; page <= 5; page++) {
+      final response = await _get(
+        Uri.parse('$baseUrl/repos/$owner/$repo/releases/$releaseId/assets'
+            '?per_page=100&page=$page'),
+        headers: _headers(token),
+      );
+      if (response.statusCode != 200) break;
+      final page_ = jsonDecode(response.body);
+      if (page_ is! List || page_.isEmpty) break;
+      for (final entry in page_) {
+        if (entry is Map) out.add(Map<String, dynamic>.from(entry));
+      }
+      if (page_.length < 100) break;
+    }
+    return out;
+  }
+
+  /// `holiday-1a2b3c9x2z1.mp4` → `holiday.mp4`, for assets the index does not
+  /// know about. Only strip the salt when it actually looks like one, so a
+  /// file genuinely called `my-holiday.mp4` keeps its name.
+  static String assetDisplayName(String assetName) {
+    final dot = assetName.lastIndexOf('.');
+    final stem = dot > 0 ? assetName.substring(0, dot) : assetName;
+    final ext = dot > 0 ? assetName.substring(dot) : '';
+    final cut = stem.lastIndexOf('-');
+    if (cut <= 0) return assetName;
+    final salt = stem.substring(cut + 1);
+    if (salt.length < 8 || !RegExp(r'^[0-9a-z]+$').hasMatch(salt)) {
+      return assetName;
+    }
+    return '${stem.substring(0, cut)}$ext';
+  }
+
   /// Finds (or creates) the release that holds large files.
   static Future<int> ensureAssetRelease({
     required String token,
@@ -538,7 +590,7 @@ class GithubService {
     required int length,
     Uint8List? bytes,
     Stream<List<int>>? source,
-    void Function(double fraction)? onProgress,
+    void Function(double? fraction)? onProgress,
   }) async {
     final request = http.StreamedRequest(
       'POST',
@@ -549,7 +601,10 @@ class GithubService {
         ..._headers(token),
         'Content-Type': mime,
       })
-      ..contentLength = length;
+      // 0 means "the picker could not tell us": let the request go out
+      // chunked. GitHub accepts that (verified against a 45 MB asset), so a
+      // phone pick with no size still uploads instead of being buffered.
+      ..contentLength = length > 0 ? length : null;
 
     final client = http.Client();
     try {
@@ -565,7 +620,7 @@ class GithubService {
         await for (final chunk in chunks) {
           request.sink.add(chunk);
           sent += chunk.length;
-          onProgress?.call(length > 0 ? sent / length : 1);
+          onProgress?.call(length > 0 ? sent / length : null);
           await Future<void>.delayed(Duration.zero);
         }
       } finally {

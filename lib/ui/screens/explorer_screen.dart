@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +10,8 @@ import '../../config.dart';
 import '../../models/file_item.dart';
 import '../../providers/reve_provider.dart';
 import '../../services/updater.dart';
+import '../kit.dart';
+import '../theme.dart';
 import 'accounts_screen.dart';
 import 'preview_screen.dart';
 
@@ -77,44 +80,59 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       appBar: _selected.isNotEmpty
           ? _selectionBar(provider, cs)
           : AppBar(
-        titleSpacing: 16,
+        titleSpacing: 14,
         title: Row(
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.asset('assets/icon-192.png', width: 32, height: 32, filterQuality: FilterQuality.medium),
+              borderRadius: BorderRadius.circular(11),
+              child: Image.asset('assets/icon-192.png', width: 34, height: 34, filterQuality: FilterQuality.medium),
             ),
             const SizedBox(width: 10),
-            const Text('reve', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('reve', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: -0.4, fontSize: 18)),
+                Text(
+                  provider.activeAccount == null
+                      ? 'GitHub as cloud storage'
+                      : '@${provider.activeAccount!.username}',
+                  style: TextStyle(fontSize: 10.5, color: cs.onSurfaceVariant, letterSpacing: 0.1),
+                ),
+              ],
+            ),
           ],
         ),
         actions: [
           IconButton(
-            tooltip: provider.autoSortUploads
-                ? 'Auto-sort uploads: on'
-                : 'Auto-sort uploads: off',
-            isSelected: provider.autoSortUploads,
-            icon: const Icon(Icons.auto_awesome_outlined),
-            selectedIcon: const Icon(Icons.auto_awesome),
-            onPressed: () => provider.toggleAutoSort(!provider.autoSortUploads),
+            tooltip: _searching ? 'Close search' : 'Search this folder',
+            isSelected: _searching,
+            icon: const Icon(Icons.search_rounded),
+            selectedIcon: const Icon(Icons.search_off_rounded),
+            onPressed: _toggleSearch,
           ),
           IconButton(
             tooltip: _grid ? 'List view' : 'Grid view',
-            icon: Icon(_grid ? Icons.view_list_outlined : Icons.grid_view_outlined),
+            icon: Icon(_grid ? Icons.view_agenda_rounded : Icons.grid_view_rounded),
             onPressed: () => setState(() => _grid = !_grid),
           ),
           PopupMenuButton<String>(
             tooltip: 'More',
+            icon: const Icon(Icons.more_horiz_rounded),
             onSelected: (value) {
               if (value == 'repo') _createRepository();
               if (value == 'accounts') _openAccounts();
               if (value == 'updates') _openUpdates();
+              if (value == 'sort') {
+                provider.toggleAutoSort(!provider.autoSortUploads);
+                _snack(provider.autoSortUploads ? 'Auto-sort on' : 'Auto-sort off');
+              }
             },
             itemBuilder: (context) => [
               const PopupMenuItem(
                 value: 'repo',
                 child: ListTile(
-                  leading: Icon(Icons.create_new_folder_outlined),
+                  leading: Icon(Icons.add_box_outlined),
                   title: Text('New repository'),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -124,6 +142,16 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 child: ListTile(
                   leading: Icon(Icons.manage_accounts_outlined),
                   title: Text('Accounts'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'sort',
+                child: ListTile(
+                  leading: Icon(
+                    provider.autoSortUploads ? Icons.auto_awesome : Icons.auto_awesome_outlined,
+                  ),
+                  title: Text(provider.autoSortUploads ? 'Auto-sort: on' : 'Auto-sort: off'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -142,58 +170,24 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
               ),
             ],
           ),
+          const SizedBox(width: 4),
         ],
-        bottom: provider.accounts.isEmpty || provider.repositories.isEmpty
-            ? null
-            : PreferredSize(
-                preferredSize: const Size.fromHeight(62),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _LabeledDropdown<int>(
-                          label: 'Repository',
-                          value: provider.selectedRepo?['id'] as int?,
-                          items: provider.repositories
-                              .map((repo) => MapEntry<int, String>(
-                                    repo['id'] as int,
-                                    (repo['full_name'] ?? '').toString(),
-                                  ))
-                              .toList(),
-                          onChanged: (id) {
-                            for (final repo in provider.repositories) {
-                              if (repo['id'] == id) {
-                                provider.selectRepository(repo);
-                                return;
-                              }
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 132,
-                        child: _LabeledDropdown<String>(
-                          label: 'Branch',
-                          value: provider.selectedBranch,
-                          items: provider.branches
-                              .map((b) => MapEntry<String, String>(b, b))
-                              .toList(),
-                          onChanged: (b) {
-                            if (b != null) provider.selectBranch(b);
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
       ),
       body: provider.accounts.isEmpty
           ? _Welcome(onConnect: _openAccounts)
           : Column(
               children: [
+                if (provider.selectedRepo != null)
+                  DriveHeader(
+                    title: provider.repoName,
+                    branch: provider.selectedBranch ?? '',
+                    files: provider.files.length,
+                    committedBytes: provider.repoSizeBytes > provider.assetBytes
+                        ? provider.repoSizeBytes - provider.assetBytes
+                        : 0,
+                    assetBytes: provider.assetBytes,
+                    onTap: () => _showDriveSheet(provider),
+                  ),
                 _breadcrumbs(provider, cs),
                 if (_searching) _searchRow(provider, cs),
                 _transferBar(provider, cs),
@@ -204,6 +198,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           ? null
           : Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 FloatingActionButton.small(
                   heroTag: 'folder',
@@ -212,17 +207,18 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   child: const Icon(Icons.create_new_folder_outlined),
                 ),
                 const SizedBox(height: 10),
-                FloatingActionButton(
+                FloatingActionButton.extended(
                   heroTag: 'upload',
                   tooltip: 'Upload files',
-                  onPressed: provider.isUploading ? null : () => _upload(provider),
-                  child: provider.isUploading
+                  icon: provider.isUploading
                       ? const SizedBox(
-                          width: 22,
-                          height: 22,
+                          width: 18,
+                          height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2.4),
                         )
-                      : const Icon(Icons.upload_file),
+                      : const Icon(Icons.upload_file_rounded),
+                  label: Text(provider.isUploading ? 'Uploading…' : 'Upload'),
+                  onPressed: provider.isUploading ? null : () => _upload(provider),
                 ),
               ],
             ),
@@ -280,10 +276,249 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     ('folder', 'Folders'),
   ];
 
+  /// Pill breadcrumbs: each segment is a tap target, so jumping two levels up
+  /// costs one tap instead of a walk through the tree.
+  Widget _breadcrumbs(ReveProvider provider, ColorScheme cs) {
+    final path = provider.currentPath;
+    final parts = path.isEmpty ? <String>[] : path.split('/');
+    final crumbs = <Widget>[
+      _Crumb(
+        label: provider.repoName.isEmpty ? 'Repository' : provider.repoName,
+        current: parts.isEmpty,
+        onTap: () {
+          _clearSelection();
+          provider.navigateToFolder('');
+        },
+      ),
+    ];
+    for (var i = 0; i < parts.length; i++) {
+      final upTo = parts.take(i + 1).join('/');
+      crumbs.add(Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1),
+        child: Icon(Icons.chevron_right_rounded, size: 16, color: cs.outline),
+      ));
+      crumbs.add(_Crumb(
+        label: parts[i],
+        current: i == parts.length - 1,
+        onTap: () {
+          _clearSelection();
+          provider.navigateToFolder(upTo);
+        },
+      ));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      child: Row(
+        children: [
+          if (parts.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: IconButton(
+                tooltip: 'Up one level',
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor: cs.surfaceContainerHigh,
+                  minimumSize: const Size(34, 34),
+                  padding: EdgeInsets.zero,
+                ),
+                icon: const Icon(Icons.arrow_upward_rounded, size: 17),
+                onPressed: () {
+                  _clearSelection();
+                  provider.navigateUp();
+                },
+              ),
+            ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              reverse: true,
+              child: Row(children: crumbs),
+            ),
+          ),
+          if (provider.selectedRepo != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Text(
+                '${_visibleFiles(provider).length}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ),
+          IconButton(
+            tooltip: 'Refresh',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            onPressed: () {
+              provider.fetchContents();
+              provider.checkForUpdates();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searching = !_searching;
+      if (_searching) {
+        _searchController.clear();
+      } else {
+        _query = '';
+        _filter = 'all';
+        _searchController.clear();
+      }
+    });
+  }
+
+  /// The repo/branch/storage sheet behind [DriveHeader].
+  Future<void> _showDriveSheet(ReveProvider provider) async {
+    final cs = Theme.of(context).colorScheme;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        provider.repoName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${formatBytes(provider.repoSizeBytes)} used · '
+                        '${formatBytes(provider.assetBytes)} in '
+                        '${provider.assetCount} release asset'
+                        '${provider.assetCount == 1 ? '' : 's'}',
+                        style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                      ),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(99),
+                        child: LinearProgressIndicator(
+                          value: provider.repoSizeBytes <= 0
+                              ? 0
+                              : (provider.assetBytes / provider.repoSizeBytes)
+                                  .clamp(0.0, 1.0),
+                          minHeight: 5,
+                          backgroundColor: cs.surfaceContainerHighest,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Anything over 38 MB is stored as a release asset instead '
+                        'of a commit — it still shows here.',
+                        style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant, height: 1.35),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+                        child: Text(
+                          'Repositories',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+                        ),
+                      ),
+                      for (final repo in provider.repositories)
+                        ListTile(
+                          leading: Icon(
+                            (repo['private'] as bool? ?? false)
+                                ? Icons.lock_outline_rounded
+                                : Icons.folder_shared_outlined,
+                            size: 20,
+                            color: repo['id'] == provider.selectedRepo?['id']
+                                ? cs.primary
+                                : cs.onSurfaceVariant,
+                          ),
+                          title: Text(
+                            (repo['name'] ?? '').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: repo['id'] == provider.selectedRepo?['id']
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            (repo['full_name'] ?? '').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            provider.selectRepository(repo);
+                          },
+                        ),
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(20, 14, 20, 4),
+                        child: Text(
+                          'Branch',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+                        ),
+                      ),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final branch in provider.branches)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              child: ChoiceChip(
+                                label: Text(branch),
+                                selected: branch == provider.selectedBranch,
+                                onSelected: (_) {
+                                  Navigator.pop(sheetContext);
+                                  provider.selectBranch(branch);
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _searchRow(ReveProvider provider, ColorScheme cs) {
-    return Container(
-      color: cs.surfaceContainerLow,
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: Column(
         children: [
           Row(
@@ -293,34 +528,29 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   controller: _searchController,
                   autofocus: true,
                   textInputAction: TextInputAction.search,
-                  style: const TextStyle(fontSize: 14),
+                  style: const TextStyle(fontSize: 13.5),
                   decoration: InputDecoration(
                     isDense: true,
                     hintText: 'Search this folder',
-                    prefixIcon: const Icon(Icons.search, size: 20),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 19),
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
                             tooltip: 'Clear',
-                            icon: const Icon(Icons.backspace_outlined, size: 18),
+                            icon: const Icon(Icons.close_rounded, size: 17),
                             onPressed: () {
                               _searchController.clear();
                               setState(() => _query = '');
                             },
                           ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   ),
                   onChanged: (value) => setState(() => _query = value),
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               PopupMenuButton<String>(
                 tooltip: 'Sort',
-                icon: const Icon(Icons.sort),
+                icon: const Icon(Icons.sort_rounded, size: 20),
                 onSelected: (value) => setState(() => _sort = value),
                 itemBuilder: (context) => const [
                   PopupMenuItem(value: 'name', child: Text('Name')),
@@ -331,7 +561,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             ],
           ),
           SizedBox(
-            height: 40,
+            height: 42,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: _filters.length,
@@ -339,7 +569,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
               itemBuilder: (context, index) {
                 final (value, label) = _filters[index];
                 return ChoiceChip(
-                  label: Text(label, style: const TextStyle(fontSize: 12)),
+                  label: Text(label),
                   selected: _filter == value,
                   visualDensity: VisualDensity.compact,
                   onSelected: (_) => setState(() => _filter = value),
@@ -455,123 +685,57 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         : 'Deleted $deleted of ${picked.length}');
   }
 
-  Widget _breadcrumbs(ReveProvider provider, ColorScheme cs) {
-    final path = provider.currentPath;
-    return Container(
-      color: cs.surfaceContainerLow,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Repository root',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.home_outlined, size: 20),
-            onPressed: () {
-              _clearSelection();
-              provider.navigateToFolder('');
-            },
-          ),
-          if (path.isNotEmpty)
-            IconButton(
-              tooltip: 'Up one level',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.arrow_upward, size: 20),
-              onPressed: () {
-                _clearSelection();
-                provider.navigateUp();
-              },
-            ),
-          IconButton(
-            tooltip: _searching ? 'Close search' : 'Search this folder',
-            visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.search, size: 20),
-            onPressed: () {
-              setState(() => _searching = !_searching);
-              if (_searching) _searchController.clear();
-              else {
-                _query = '';
-                _filter = 'all';
-                _searchController.clear();
-                _clearSelection();
-              }
-            },
-          ),
-          const SizedBox(width: 2),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Text(
-                path.isEmpty ? '/ (root)' : '/$path',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-          if (provider.files.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Text(
-                '${_visibleFiles(provider).length}',
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-              ),
-            ),
-          if (provider.selectedRepo != null)
-            Tooltip(
-              message: provider.assetBytes > 0
-                  ? '${formatBytes(provider.repoSizeBytes)} used · '
-                      '${formatBytes(provider.assetBytes)} in ${provider.assetCount} release assets'
-                  : '${formatBytes(provider.repoSizeBytes)} used',
-              child: Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Text(
-                  formatBytes(provider.repoSizeBytes),
-                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                ),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Refresh',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.refresh, size: 20),
-            onPressed: () {
-              provider.fetchContents();
-              provider.checkForUpdates();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The same thin bar the web client puts under the breadcrumbs: uploads,
-  /// downloads and preview loads all report through it.
+  /// The transfer bar: one thin, rounded card that says what is moving and how
+  /// far along it is.
   Widget _transferBar(ReveProvider provider, ColorScheme cs) {
     if (!provider.isBusy) return const SizedBox.shrink();
     final label = provider.progressLabel;
-    return Container(
-      color: cs.surfaceContainerLow,
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: provider.progress,
-              minHeight: 3,
-              backgroundColor: cs.surfaceContainerHighest,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(ReveTokens.rM),
+          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.6)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_upload_rounded, size: 15, color: cs.primary),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    label ?? 'Working…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (provider.progress != null)
+                  Text(
+                    '${((provider.progress ?? 0) * 100).round()}%',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+              ],
             ),
-          ),
-          if (label != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: provider.progress,
+                minHeight: 4,
+                backgroundColor: cs.surfaceContainerHighest,
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -642,20 +806,21 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
     if (_grid) {
       return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 120),
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 130),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 168,
+          maxCrossAxisExtent: 170,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 0.92,
+          childAspectRatio: 0.86,
         ),
         itemCount: files.length,
         itemBuilder: (context, index) {
           final item = files[index];
-          return _GridCard(
+          return FileCard(
             item: item,
-            url: provider.downloadUrlFor(item),
+            imageUrl: provider.downloadUrlFor(item),
             selected: _selected.contains(item.path),
+            selecting: _selected.isNotEmpty,
             onTap: () => _activate(provider, item),
             onLongPress: () => _onLongPress(item),
           );
@@ -664,85 +829,18 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 120),
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 130),
       itemCount: files.length,
       itemBuilder: (context, index) {
         final item = files[index];
-        return ListTile(
-          leading: _leading(item),
-          title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            item.isDirectory
-                ? 'Folder'
-                : '${formatBytes(item.size)}${item.isAsset ? ' · release asset' : ''}',
-            style: const TextStyle(fontSize: 11.5),
-          ),
+        return FileRow(
+          item: item,
+          selected: _selected.contains(item.path),
+          selecting: _selected.isNotEmpty,
           onTap: () => _activate(provider, item),
           onLongPress: () => _onLongPress(item),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_selected.contains(item.path))
-                Icon(Icons.check_circle, size: 20, color: Theme.of(context).colorScheme.primary)
-              else if (!item.isDirectory)
-                IconButton(
-                  tooltip: 'Download',
-                  icon: const Icon(Icons.download_outlined, size: 20),
-                  onPressed: () => _download(provider, item),
-                ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, size: 20),
-                onSelected: (value) => _onAction(provider, item, value),
-                itemBuilder: (context) => [
-                  if (!item.isDirectory) ...[
-                    const PopupMenuItem(value: 'preview', child: Text('Preview')),
-                    const PopupMenuItem(value: 'download', child: Text('Download')),
-                    const PopupMenuItem(value: 'open', child: Text('Open on GitHub')),
-                  ],
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  ),
-                ],
-              ),
-            ],
-          ),
         );
       },
-    );
-  }
-
-  Widget _leading(GithubFileItem item) {
-    if (_selected.contains(item.path)) {
-      return Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(Icons.check_circle, size: 21),
-      );
-    }
-    final kind = _kindOf(item);
-    final (icon, color) = switch (kind) {
-      'dir' => (Icons.folder, const Color(0xFFF2B429)),
-      'image' => (Icons.image_outlined, const Color(0xFF4F9CF9)),
-      'video' => (Icons.movie_outlined, const Color(0xFFFF6B9D)),
-      'audio' => (Icons.audiotrack_outlined, const Color(0xFF8B5CF6)),
-      'doc' => (Icons.description_outlined, const Color(0xFF38BDF8)),
-      'archive' => (Icons.folder_zip_outlined, const Color(0xFFF59E0B)),
-      'code' => (Icons.code, const Color(0xFF34D399)),
-      _ => (Icons.insert_drive_file_outlined, Colors.blueGrey),
-    };
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.16),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(icon, color: color, size: 21),
     );
   }
 
@@ -764,13 +862,6 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
   void _onLongPress(GithubFileItem item) {
     setState(() => _selected.add(item.path));
-  }
-
-  Future<void> _onAction(ReveProvider provider, GithubFileItem item, String value) async {
-    if (value == 'preview') return _preview(item);
-    if (value == 'download') return _download(provider, item);
-    if (value == 'open') return _openOnGithub(provider, item);
-    if (value == 'delete') return _delete(provider, item);
   }
 
   /// Reads the bytes through the API (so private repositories work) and hands
@@ -814,7 +905,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: _leading(item),
+                leading: KindTile(kind: fileKind(item.name, directory: item.isDirectory)),
                 title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text('${item.path} · ${item.isDirectory ? 'folder' : formatBytes(item.size)}'),
               ),
@@ -969,87 +1060,220 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     }
   }
 
-  /// file_picker reports sizes lazily; some Android picks (videos) report
-  /// nothing, so we prefer the cached value and only then the stream fallback.
+  /// file_picker reports sizes lazily, and some Android picks (large videos
+  /// from the document picker) report nothing at all. 0 means "unknown" — the
+  /// caller then reads at most the small-file ceiling and streams the rest.
   Future<int> _fileLength(PlatformFile file) async {
-    final known = file.lengthSync();
-    if (known != null) return known;
-    final fromFile = await file.length();
-    return fromFile ?? 0;
+    try {
+      final known = file.lengthSync();
+      if (known != null && known > 0) return known;
+      final measured = await file.length();
+      if (measured != null && measured > 0) return measured;
+    } catch (_) {
+      // Fall through: an unreadable length just means "unknown".
+    }
+    return 0;
   }
 
-  /// Streams a big file straight from disk into a release asset; buffers when
-  /// the pick cannot stream (the phone's picker returns a plain file path).
+  /// Uploads a file whose size we already know is over the Contents ceiling.
+  /// Streaming is tried first; if that fails, the pick is read once and posted
+  /// in one request, which is what saves a picker that cannot stream.
   Future<UploadResult> _uploadLarge(
     ReveProvider provider,
-    PlatformFile file, {
-    required int length,
-  }) async {
+    PlatformFile file,
+    int length,
+  ) async {
     Stream<List<int>>? stream;
     Uint8List? bytes;
     try {
       stream = file.readAsByteStream();
     } catch (_) {
+      // A document-picker URI cannot always be streamed; read it in one go.
       bytes = await file.readAsBytes();
     }
-    return provider.uploadLargeFile(
+    final first = await provider.uploadLargeFile(
       fileName: file.name,
-      length: length,
+      length: bytes != null ? bytes.lengthInBytes : length,
       source: stream,
       bytes: bytes,
     );
+    if (first.ok) return first;
+    try {
+      return await provider.uploadLargeFile(
+        fileName: file.name,
+        length: 0,
+        bytes: await file.readAsBytes(),
+      );
+    } catch (e) {
+      return UploadResult(false, '${first.message} · retry failed: ${_explain(e)}');
+    }
+  }
+
+  /// Reads a pick without trusting its reported size: buffer up to [limit]
+  /// bytes and, if the file is bigger, hand back a stream that replays the
+  /// buffer and keeps reading. Peak memory stays at the ceiling, so a 1 GB
+  /// video uploads instead of crashing the app.
+  Future<_Prepared> _readUpTo(PlatformFile file, int limit) async {
+    final iterator = StreamIterator<List<int>>(file.readAsByteStream());
+    final head = <List<int>>[];
+    var total = 0;
+    while (await iterator.moveNext()) {
+      final chunk = iterator.current;
+      total += chunk.length;
+      if (total > limit) {
+        return _Prepared(_replay(head, iterator), null);
+      }
+      head.add(chunk);
+    }
+    final bytes = Uint8List(total);
+    var offset = 0;
+    for (final chunk in head) {
+      bytes.setRange(offset, offset + chunk.length, chunk);
+      offset += chunk.length;
+    }
+    return _Prepared(null, bytes);
+  }
+
+  /// Re-emits the buffered head, then everything still left in [rest].
+  Stream<List<int>> _replay(List<List<int>> head, StreamIterator<List<int>> rest) async* {
+    for (final chunk in head) {
+      yield chunk;
+    }
+    while (await rest.moveNext()) {
+      yield rest.current;
+    }
+  }
+
+  /// A pick that cannot be streamed at all is read in one go; the error is
+  /// surfaced rather than swallowed.
+  Future<_Prepared> _prepare(PlatformFile file) async {
+    try {
+      return await _readUpTo(file, ReveProvider.maxUploadBytes);
+    } catch (_) {
+      final bytes = await file.readAsBytes();
+      return bytes.lengthInBytes <= ReveProvider.maxUploadBytes
+          ? _Prepared(null, bytes)
+          : _Prepared(Stream<List<int>>.value(bytes), null);
+    }
   }
 
   Future<void> _uploadFiles(ReveProvider provider, List<PlatformFile> work) async {
     final failed = <PlatformFile>[];
+    final reasons = <String>[];
     final batch = <BatchedFile>[];
     var large = 0;
+
     for (final file in work) {
-      final length = await _fileLength(file);
-      if (length > ReveProvider.maxUploadBytes) {
-        // Big, and the picker told us the size: stream from disk.
-        final outcome = await _uploadLarge(provider, file, length: length);
-        if (!outcome.ok) failed.add(file);
-        large++;
-        continue;
-      }
-      // Read it now. Some Android picks (videos) report no size at all, so
-      // the small/large decision has to be made on the real byte count.
-      final Uint8List bytes;
       try {
-        bytes = await file.readAsBytes();
+        final length = await _fileLength(file);
+        if (length > ReveProvider.maxUploadBytes) {
+          final outcome = await _uploadLarge(provider, file, length);
+          if (outcome.ok) {
+            large++;
+          } else {
+            failed.add(file);
+            reasons.add('${file.name} — ${_explain(outcome.message)}');
+          }
+          continue;
+        }
+        // Unknown size: read up to the ceiling. Small picks become one commit,
+        // anything bigger continues streaming into a release asset.
+        final prepared = await _prepare(file);
+        if (prepared.stream != null) {
+          final outcome = await provider.uploadLargeFile(
+            fileName: file.name,
+            length: 0,
+            source: prepared.stream,
+          );
+          if (outcome.ok) {
+            large++;
+          } else {
+            failed.add(file);
+            reasons.add('${file.name} — ${_explain(outcome.message)}');
+          }
+          continue;
+        }
+        batch.add(BatchedFile(name: file.name, bytes: prepared.bytes!));
       } catch (e) {
         failed.add(file);
-        continue;
+        reasons.add('${file.name} — ${_explain(e)}');
       }
-      if (bytes.lengthInBytes > ReveProvider.maxUploadBytes) {
-        final outcome = await provider.uploadLargeFile(
-          fileName: file.name,
-          length: bytes.lengthInBytes,
-          bytes: bytes,
-        );
-        if (!outcome.ok) failed.add(file);
-        large++;
-        continue;
-      }
-      batch.add(BatchedFile(name: file.name, bytes: bytes));
     }
+
     if (batch.isNotEmpty) {
       final outcome = await provider.commitBatch(batch);
-      if (outcome.failed.isNotEmpty) {
-        _snack('${outcome.failed.join(', ')}: ${outcome.error ?? 'Upload failed'}');
-      }
       large += outcome.uploaded.length;
+      if (outcome.failed.isNotEmpty) {
+        reasons.addAll(outcome.failed.map(
+          (name) => '$name — ${outcome.error ?? 'the commit was refused'}',
+        ));
+      }
     }
     if (large > 0) {
       _snack(large == 1 ? 'Uploaded 1 file' : 'Uploaded $large files');
     }
-    if (failed.isNotEmpty) {
-      _snack(
-        '${failed.length} file${failed.length == 1 ? '' : 's'} not uploaded',
-        action: SnackBarAction(label: 'Retry', onPressed: () => _uploadFiles(provider, failed)),
+    if (reasons.isNotEmpty) {
+      await _showUploadFailures(
+        reasons,
+        onRetry: failed.isEmpty ? null : () => _uploadFiles(provider, failed),
       );
     }
+  }
+
+  /// Says *why* an upload failed. The old flow only said "not uploaded", which
+  /// left a too-large file, an expired token and a dropped socket identical.
+  Future<void> _showUploadFailures(
+    List<String> reasons, {
+    VoidCallback? onRetry,
+  }) async {
+    if (!mounted) return;
+    final cs = Theme.of(context).colorScheme;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(Icons.cloud_off_outlined, color: cs.error),
+        title: Text(reasons.length == 1
+            ? 'One file did not upload'
+            : '${reasons.length} files did not upload'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 460, maxHeight: 320),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final reason in reasons)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: SelectableText(
+                      reason,
+                      style: TextStyle(fontSize: 12.5, height: 1.4, color: cs.onSurfaceVariant),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          if (onRetry != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                onRetry();
+              },
+              child: const Text('Retry'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _explain(Object error) {
+    final text = error.toString();
+    return text.startsWith('Exception: ') ? text.substring(11) : text;
   }
 
   Future<void> _createFolder(ReveProvider provider) async {
@@ -1277,35 +1501,8 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  static String _kindOf(GithubFileItem item) {
-    if (item.isDirectory) return 'dir';
-    final dot = item.name.lastIndexOf('.');
-    final ext = dot > 0 ? item.name.substring(dot + 1).toLowerCase() : '';
-    if (const {
-      'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif',
-      'heic', 'heif', 'tif', 'tiff',
-    }.contains(ext)) {
-      return 'image';
-    }
-    if (const {
-      'mp4', 'webm', 'mkv', 'avi', 'mov', 'ogv', 'm4v', '3gp', 'ts', 'm2ts', 'mpd', 'wmv', 'flv',
-    }.contains(ext)) {
-      return 'video';
-    }
-    if (const {
-      'mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a', 'm4b', 'aac', 'opus', 'amr', 'wma', 'mid',
-    }.contains(ext)) {
-      return 'audio';
-    }
-    if (const {'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'}.contains(ext)) return 'archive';
-    if (const {'pdf', 'doc', 'docx', 'txt', 'md', 'markdown', 'xls', 'xlsx', 'csv', 'json', 'xml', 'yaml', 'yml', 'log'}.contains(ext)) {
-      return 'doc';
-    }
-    if (const {'js', 'mjs', 'ts', 'tsx', 'jsx', 'dart', 'py', 'rb', 'go', 'rs', 'java', 'kt', 'c', 'h', 'cpp', 'hpp', 'cs', 'php', 'sh', 'html', 'css', 'scss', 'sql', 'toml', 'ini', 'conf'}.contains(ext)) {
-      return 'code';
-    }
-    return 'file';
-  }
+  static String _kindOf(GithubFileItem item) =>
+      fileKind(item.name, directory: item.isDirectory);
 
   void _snack(String message, {SnackBarAction? action}) {
     if (!mounted) return;
@@ -1315,111 +1512,35 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   }
 }
 
-class _GridCard extends StatelessWidget {
-  final GithubFileItem item;
-  final String? url;
-  final bool selected;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
+/// One picked file ready to upload: either fully read, or a stream that still
+/// has reader attached (used for anything over the small-file ceiling).
+class _Prepared {
+  final Stream<List<int>>? stream;
+  final Uint8List? bytes;
 
-  const _GridCard({
-    required this.item,
-    this.url,
-    this.selected = false,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  /// Images get a real thumbnail; everything else keeps a glyph so a folder
-  /// full of videos does not pull hundreds of megabytes.
-  Widget _thumb(BuildContext context, ColorScheme cs, bool isDir) {
-    final isImage = !isDir && _isImage(item.name);
-    if (!isImage || url == null) {
-      return Icon(
-        isDir ? Icons.folder : Icons.insert_drive_file_outlined,
-        size: 38,
-        color: isDir ? const Color(0xFFF2B429) : cs.primary,
-      );
-    }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 64,
-        height: 64,
-        child: Image.network(
-          url!,
-          fit: BoxFit.cover,
-          cacheWidth: 256,
-          filterQuality: FilterQuality.low,
-          errorBuilder: (context, error, stack) => Icon(Icons.image_outlined, size: 38, color: cs.primary),
-        ),
-      ),
-    );
-  }
-
-  static bool _isImage(String name) {
-    final dot = name.lastIndexOf('.');
-    final ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
-    return const {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'}.contains(ext);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDir = item.isDirectory;
-    return Card(
-      elevation: 0,
-      color: cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.outlineVariant),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Stack(
-            alignment: Alignment.topRight,
-            children: [
-              _thumb(context, cs, isDir),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 10),
-                  Text(
-                    item.name,
-                    maxLines: 2,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, height: 1.3),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    isDir ? 'folder' : formatBytes(item.size),
-                    style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
-                  ),
-                ],
-              ),
-              if (selected)
-                Icon(Icons.check_circle, size: 18, color: cs.primary),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  const _Prepared(this.stream, this.bytes);
 }
 
 class _Welcome extends StatelessWidget {
   final VoidCallback onConnect;
   const _Welcome({required this.onConnect});
 
-  static const List<(IconData, String)> _steps = [
-    (Icons.link, 'Pick a repository from the dropdown'),
-    (Icons.upload_file, 'Upload files — up to 38 MB, or any size as release assets'),
-    (Icons.preview, 'Browse and preview photos, video, PDF and documents'),
+  static const List<(IconData, String, String)> _steps = [
+    (
+      Icons.link_rounded,
+      'Connect a repo',
+      'Sign in with GitHub and pick where your files live.',
+    ),
+    (
+      Icons.upload_file_rounded,
+      'Upload anything',
+      'Up to 38 MB per commit, or any size as a release asset.',
+    ),
+    (
+      Icons.play_circle_outline_rounded,
+      'Preview in place',
+      'Photos, video, PDFs and code open right in the app.',
+    ),
   ];
 
   @override
@@ -1427,53 +1548,125 @@ class _Welcome extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 40),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset('assets/icon-512.png', width: 96, height: 96),
-            const SizedBox(height: 20),
-            const Text(
-              'Turn GitHub into your drive',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700, letterSpacing: -0.3),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Connect one or more GitHub accounts with a personal access token or OAuth, '
-              'pick a repository, and start uploading. Nothing passes through a third-party server.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, height: 1.6, color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 18),
             Container(
-              constraints: const BoxConstraints(maxWidth: 360),
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: ReveTokens.brandGradient,
+                ),
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: ReveTokens.brandA.withValues(alpha: 0.28),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(9),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Image.asset(
+                  'assets/icon-192.png',
+                  fit: BoxFit.cover,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Your GitHub repo, as a drive',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.6,
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
+              child: Text(
+                'A file manager for the files you already trust GitHub with. '
+                'No middle server, no size ceiling, no lock-in.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13.2, height: 1.55, color: cs.onSurfaceVariant),
+              ),
+            ),
+            const SizedBox(height: 26),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 380),
               child: Column(
                 children: [
                   for (var i = 0; i < _steps.length; i++) ...[
-                    if (i > 0) const SizedBox(height: 12),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(_steps[i].$1, size: 18, color: cs.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _steps[i].$2,
-                            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-                          ),
+                    if (i > 0) const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(ReveTokens.rM),
+                        border: Border.all(
+                          color: cs.outlineVariant.withValues(alpha: 0.6),
                         ),
-                      ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: cs.secondaryContainer,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                            child: Icon(_steps[i].$1, size: 19, color: cs.onSecondaryContainer),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _steps[i].$2,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _steps[i].$3,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    height: 1.35,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
-            const SizedBox(height: 22),
-            FilledButton.icon(
-              onPressed: onConnect,
-              icon: const Icon(Icons.login),
-              label: const Text('Connect GitHub account'),
+            const SizedBox(height: 28),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 220),
+              child: FilledButton.icon(
+                onPressed: onConnect,
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: const Text('Connect GitHub account'),
+              ),
             ),
           ],
         ),
@@ -1495,36 +1688,47 @@ class _Prompt extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.fromLTRB(28, 20, 28, 80),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 82,
-              height: 82,
+              width: 76,
+              height: 76,
               decoration: BoxDecoration(
-                color: cs.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(26),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    cs.secondaryContainer,
+                    cs.tertiaryContainer,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
               ),
-              child: Icon(icon, size: 36, color: cs.primary),
+              child: Icon(icon, size: 32, color: cs.onSecondaryContainer),
             ),
             const SizedBox(height: 18),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
             ),
             const SizedBox(height: 8),
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
+              constraints: const BoxConstraints(maxWidth: 400),
               child: Text(
                 body,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, height: 1.6, color: cs.onSurfaceVariant),
+                style: TextStyle(fontSize: 12.8, height: 1.6, color: cs.onSurfaceVariant),
               ),
             ),
             if (action != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 22),
               action!,
             ],
           ],
@@ -1534,45 +1738,36 @@ class _Prompt extends StatelessWidget {
   }
 }
 
-class _LabeledDropdown<T> extends StatelessWidget {
+class _Crumb extends StatelessWidget {
   final String label;
-  final T? value;
-  final List<MapEntry<T, String>> items;
-  final ValueChanged<T?> onChanged;
+  final bool current;
+  final VoidCallback onTap;
 
-  const _LabeledDropdown({
+  const _Crumb({
     required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
+    required this.current,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final known = items.any((entry) => entry.key == value);
-    return InputDecorator(
-      decoration: InputDecoration(
-        isDense: true,
-        border: const OutlineInputBorder(),
-        labelText: label,
-        contentPadding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<T>(
-          isExpanded: true,
-          isDense: true,
-          value: known ? value : null,
-          hint: Text(label, style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant)),
-          icon: Icon(Icons.arrow_drop_down, size: 20, color: cs.onSurfaceVariant),
-          style: TextStyle(fontSize: 13, color: cs.onSurface),
-          items: items
-              .map((entry) => DropdownMenuItem<T>(
-                    value: entry.key,
-                    child: Text(entry.value, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ))
-              .toList(),
-          onChanged: onChanged,
+    return Material(
+      color: current ? cs.secondaryContainer : Colors.transparent,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: current ? FontWeight.w700 : FontWeight.w600,
+              color: current ? cs.onSecondaryContainer : cs.onSurfaceVariant,
+            ),
+          ),
         ),
       ),
     );
