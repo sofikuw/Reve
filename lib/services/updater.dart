@@ -8,6 +8,21 @@ import '../config.dart';
 /// because alpha builds are just the early numbers of a beta cycle.
 enum UpdateChannel { stable, beta }
 
+/// An installable APK attached to a release.
+class UpdateAsset {
+  const UpdateAsset({
+    required this.name,
+    required this.url,
+    required this.size,
+  });
+
+  final String name;
+  final String url;
+  final int size;
+
+  String get label => '$name · ${size > 0 ? '${(size / 1024 / 1024).toStringAsFixed(1)} MB' : 'unknown size'}';
+}
+
 /// One published release, read from the repository's GitHub releases.
 class UpdateInfo {
   const UpdateInfo({
@@ -18,6 +33,7 @@ class UpdateInfo {
     required this.pageUrl,
     this.channel,
     this.build = 0,
+    this.assets = const [],
   });
 
   final String version;
@@ -27,6 +43,19 @@ class UpdateInfo {
   final String pageUrl;
   final String? channel;
   final int build;
+  final List<UpdateAsset> assets;
+
+  /// The APK matching [abi] (for example `arm64-v8a`), or the only APK when
+  /// the device ABI is unknown and there is nothing to choose between.
+  UpdateAsset? apkFor(String? abi) {
+    if (assets.isEmpty) return null;
+    if (abi != null && abi.isNotEmpty) {
+      for (final asset in assets) {
+        if (asset.name.contains(abi)) return asset;
+      }
+    }
+    return assets.length == 1 ? assets.first : null;
+  }
 
   String get label =>
       channel == null ? version : '$version · $channel #${build.toString().padLeft(3, '0')}';
@@ -112,6 +141,19 @@ class Updater {
     final match = RegExp(r'^v?(\d+\.\d+\.\d+)(?:-(alpha|beta|stable)\.(\d+))?$').firstMatch(tag);
     if (match == null) return null;
     final name = (release['name'] as String?)?.trim() ?? '';
+    final assets = <UpdateAsset>[];
+    for (final entry in (release['assets'] as List?) ?? const []) {
+      if (entry is! Map) continue;
+      final assetName = (entry['name'] as String?) ?? '';
+      if (!assetName.toLowerCase().endsWith('.apk')) continue;
+      final url = entry['browser_download_url'] as String?;
+      if (url == null || url.isEmpty) continue;
+      assets.add(UpdateAsset(
+        name: assetName,
+        url: url,
+        size: (entry['size'] as num?)?.toInt() ?? 0,
+      ));
+    }
     return UpdateInfo(
       version: match.group(1)!,
       channel: match.group(2),
@@ -121,6 +163,7 @@ class Updater {
       notes: (release['body'] as String?) ?? '',
       pageUrl: (release['html_url'] as String?) ??
           'https://github.com/${AppConfig.updateRepo}/releases',
+      assets: assets,
     );
   }
 }

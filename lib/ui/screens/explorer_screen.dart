@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config.dart';
 import '../../models/file_item.dart';
 import '../../providers/reve_provider.dart';
+import '../../services/device_abi.dart';
+import '../../services/update_installer.dart';
 import '../../services/updater.dart';
 import '../kit.dart';
 import '../theme.dart';
@@ -1347,105 +1349,183 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         builder: (context, _) {
           final update = provider.update;
           final cs = Theme.of(context).colorScheme;
-          return AlertDialog(
-            title: const Text('Updates'),
-            content: SizedBox(
-              width: 420,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      AppConfig.build > 0
-                          ? 'Installed: reve ${AppConfig.version} · build ${AppConfig.build}'
-                          : 'Installed: reve ${AppConfig.version}',
-                      style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Beta and alpha builds'),
-                      subtitle: const Text('Off: stable releases only'),
-                      value: provider.offersPrereleases,
-                      onChanged: (value) => provider.setUpdateChannel(
-                        value ? UpdateChannel.beta : UpdateChannel.stable,
-                      ),
-                    ),
-                    if (provider.checkingUpdate)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10),
-                        child: LinearProgressIndicator(minHeight: 3),
-                      ),
-                    if (provider.updateError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Could not check: ${provider.updateError}',
-                          style: TextStyle(fontSize: 12, color: cs.error),
-                        ),
-                      ),
-                    if (!provider.checkingUpdate && update == null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          provider.updateError == null
-                              ? 'Up to date.'
-                              : 'Try again when you are online.',
-                          style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-                        ),
-                      ),
-                    if (update != null) ...[
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+          return StatefulBuilder(
+            builder: (dialogContext, setState) {
+              String? error;
+              double? progress;
+              var busy = false;
+
+              Future<void> install() async {
+                setState(() {
+                  busy = true;
+                  error = null;
+                  progress = 0;
+                });
+                try {
+                  var asset = update?.apkFor(await deviceAbi());
+                  if (asset == null && (update?.assets.length ?? 0) > 1) {
+                    asset = await showDialog<UpdateAsset>(
+                      context: dialogContext,
+                      builder: (chooserContext) => AlertDialog(
+                        title: const Text('Choose APK'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('reve ${update.label}',
-                                style: const TextStyle(fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 6),
-                            Text(
-                              update.notes.trim().isEmpty
-                                  ? 'New build published.'
-                                  : update.notes.trim(),
-                              maxLines: 6,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, height: 1.5, color: cs.onSurfaceVariant),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              'Pick the APK for your phone\'s CPU on the release page; '
-                              'it installs over this build without losing accounts.',
-                              style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
-                            ),
+                            for (final option in update!.assets)
+                              ListTile(
+                                title: Text(option.name),
+                                subtitle: Text(option.label),
+                                onTap: () => Navigator.pop(chooserContext, option),
+                              ),
                           ],
                         ),
                       ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Close'),
-              ),
-              if (update != null)
-                FilledButton.icon(
-                  onPressed: () => launchUrl(
-                    Uri.parse(update.pageUrl),
-                    mode: LaunchMode.externalApplication,
+                    );
+                  }
+                  if (asset == null) {
+                    throw Exception('This release has no APK attached.');
+                  }
+                  final path = await downloadApk(
+                    asset,
+                    onProgress: (fraction) {
+                      if (dialogContext.mounted) {
+                        setState(() => progress = fraction);
+                      }
+                    },
+                  );
+                  await installApk(path);
+                  if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                } catch (e) {
+                  if (dialogContext.mounted) setState(() => error = e.toString());
+                } finally {
+                  if (dialogContext.mounted) setState(() => busy = false);
+                }
+              }
+
+              return AlertDialog(
+                title: const Text('Updates'),
+                content: SizedBox(
+                  width: 420,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          AppConfig.build > 0
+                              ? 'Installed: reve ${AppConfig.version} · build ${AppConfig.build}'
+                              : 'Installed: reve ${AppConfig.version}',
+                          style: TextStyle(fontSize: 12.5, color: cs.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 8),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Beta and alpha builds'),
+                          subtitle: const Text('Off: stable releases only'),
+                          value: provider.offersPrereleases,
+                          onChanged: (value) => provider.setUpdateChannel(
+                            value ? UpdateChannel.beta : UpdateChannel.stable,
+                          ),
+                        ),
+                        if (provider.checkingUpdate)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 10),
+                            child: LinearProgressIndicator(minHeight: 3),
+                          ),
+                        if (provider.updateError != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Could not check: ${provider.updateError}',
+                              style: TextStyle(fontSize: 12, color: cs.error),
+                            ),
+                          ),
+                        if (!provider.checkingUpdate && update == null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              provider.updateError == null
+                                  ? 'Up to date.'
+                                  : 'Try again when you are online.',
+                              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                            ),
+                          ),
+                        if (update != null) ...[
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHigh,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('reve ${update.label}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 6),
+                                Text(
+                                  update.notes.trim().isEmpty
+                                      ? 'New build published.'
+                                      : update.notes.trim(),
+                                  maxLines: 6,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12, height: 1.5, color: cs.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (busy) ...[
+                          const SizedBox(height: 12),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(99),
+                            child: LinearProgressIndicator(
+                              value: progress,
+                              minHeight: 4,
+                              backgroundColor: cs.surfaceContainerHighest,
+                            ),
+                          ),
+                        ],
+                        if (error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(error!, style: TextStyle(fontSize: 12, color: cs.error)),
+                          ),
+                      ],
+                    ),
                   ),
-                  icon: const Icon(Icons.download_outlined),
-                  label: const Text('Download'),
                 ),
-            ],
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Close'),
+                  ),
+                  if (update != null && !busy)
+                    TextButton(
+                      onPressed: () => launchUrl(
+                        Uri.parse(update.pageUrl),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      child: const Text('Release page'),
+                    ),
+                  if (update != null)
+                    FilledButton.icon(
+                      onPressed: busy ? null : install,
+                      icon: busy
+                          ? const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.download_rounded),
+                      label: Text(busy
+                          ? 'Downloading${progress == null ? '' : ' ${(progress! * 100).round()}%'}'
+                          : 'Download & install'),
+                    ),
+                ],
+              );
+            },
           );
         },
       ),
