@@ -802,6 +802,17 @@ class _MediaPreviewState extends State<_MediaPreview> {
                 icon: const Icon(Icons.download_outlined),
                 label: const Text('Save file'),
               ),
+              if (widget.url != null && widget.url!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => launchUrl(
+                    Uri.parse(widget.url!),
+                    mode: LaunchMode.externalApplication,
+                  ),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Open in another player'),
+                ),
+              ],
             ],
           ),
         ),
