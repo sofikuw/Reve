@@ -472,6 +472,11 @@ class GithubService {
       'https://github.com/$owner/$repo/releases/download/$assetTag/'
       '${Uri.encodeComponent(assetName)}';
 
+  /// The release that holds large files — the GitHub "page" for an asset,
+  /// since release assets have no node in the repository tree.
+  static String assetReleaseUrl(String owner, String repo) =>
+      'https://github.com/$owner/$repo/releases/tag/$assetTag';
+
   /// Every asset currently in the large-file release, newest last. The
   /// committed index says where each one belongs; when it is missing or was
   /// never written, this is what keeps the file visible in the app.

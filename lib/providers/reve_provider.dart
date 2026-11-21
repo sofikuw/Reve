@@ -481,7 +481,11 @@ class ReveProvider with ChangeNotifier {
         final parent =
             path.contains('/') ? path.substring(0, path.lastIndexOf('/')) : '';
         if (parent != _currentPath || visible.contains(path)) continue;
-        items.add(GithubFileItem.fromAsset(path, entry.value));
+        items.add(GithubFileItem.fromAsset(
+          path,
+          entry.value,
+          htmlUrl: GithubService.assetReleaseUrl(owner, repoName),
+        ));
       }
       // Anything the release holds but the index lost is still the user's file:
       // show it at the root under its original name so it is never invisible.
@@ -496,11 +500,15 @@ class ReveProvider with ChangeNotifier {
           final name = (asset['name'] as String?) ?? 'asset-$id';
           final display = GithubService.assetDisplayName(name);
           if (visible.contains(display)) continue;
-          items.add(GithubFileItem.fromAsset(display, {
-            'id': id,
-            'name': name,
-            'size': (asset['size'] as num?)?.toInt() ?? 0,
-          }));
+          items.add(GithubFileItem.fromAsset(
+            display,
+            {
+              'id': id,
+              'name': name,
+              'size': (asset['size'] as num?)?.toInt() ?? 0,
+            },
+            htmlUrl: GithubService.assetReleaseUrl(owner, repoName),
+          ));
           visible.add(display);
         }
       }
@@ -1182,10 +1190,10 @@ class ReveProvider with ChangeNotifier {
   /// a signed URL, which [streamUrlFor] resolves.
   String? downloadUrlFor(GithubFileItem item) {
     if (item.isAsset) {
-      if (_selectedRepo?['private'] == false && item.assetName != null) {
+      if (item.assetName != null) {
         return GithubService.publicAssetUrl(owner, repoName, item.assetName!);
       }
-      return null;
+      return item.htmlUrl ?? GithubService.assetReleaseUrl(owner, repoName);
     }
     if (_selectedRepo == null) return item.downloadUrl;
     final branch = _selectedBranch ??
@@ -1201,6 +1209,11 @@ class ReveProvider with ChangeNotifier {
   Future<String?> streamUrlFor(GithubFileItem item) async {
     if (!item.isAsset) return downloadUrlFor(item);
     if (_activeAccount == null || _selectedRepo == null) return null;
+    // Public assets keep their filename in the URL, which lets the platform
+    // player detect the container and pick the right codec.
+    if (_selectedRepo?['private'] == false && item.assetName != null) {
+      return GithubService.publicAssetUrl(owner, repoName, item.assetName!);
+    }
     return GithubService.signedAssetUrl(
       token: _activeAccount!.token,
       owner: owner,

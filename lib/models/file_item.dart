@@ -48,13 +48,18 @@ class GithubFileItem {
         'htmlUrl': htmlUrl,
       };
 
-  factory GithubFileItem.fromAsset(String path, Map<String, dynamic> data) =>
+  factory GithubFileItem.fromAsset(
+    String path,
+    Map<String, dynamic> data, {
+    String? htmlUrl,
+  }) =>
       GithubFileItem(
         name: path.split('/').last,
         path: path,
         sha: '',
         size: (data['size'] as num?)?.toInt() ?? 0,
         type: 'file',
+        htmlUrl: htmlUrl,
         assetId: (data['id'] as num?)?.toInt(),
         assetName: data['name'] as String?,
       );
