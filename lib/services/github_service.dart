@@ -590,7 +590,7 @@ class GithubService {
     required int length,
     Uint8List? bytes,
     Stream<List<int>>? source,
-    void Function(double? fraction)? onProgress,
+    void Function(double fraction)? onProgress,
   }) async {
     // GitHub's asset endpoint refuses chunked bodies ("400 Bad Content-Length"),
     // so a request must always carry the real length. A buffered pick knows it
