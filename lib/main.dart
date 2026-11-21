@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'providers/reve_provider.dart';
 import 'services/dns_fallback.dart';
 import 'ui/screens/explorer_screen.dart';
-import 'ui/screens/lock_screen.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -24,53 +23,18 @@ Future<void> main() async {
   );
 }
 
-/// Routed through the app-lock gate when the user has set a PIN. The PIN is
-/// only consulted on resume — a short background trip does not re-ask.
-class ReveApp extends StatefulWidget {
+class ReveApp extends StatelessWidget {
   const ReveApp({super.key});
 
   @override
-  State<ReveApp> createState() => _ReveAppState();
-}
-
-class _ReveAppState extends State<ReveApp> with WidgetsBindingObserver {
-  bool _locked = false;
-  int? _pausedAtMs;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _pausedAtMs = DateTime.now().millisecondsSinceEpoch;
-      return;
-    }
-    if (state != AppLifecycleState.resumed) return;
-    final pausedMs = _pausedAtMs;
-    _pausedAtMs = null;
-    final provider = context.read<ReveProvider>();
-    if (!provider.isLocked) return;
-    final stale =
-        pausedMs == null || DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(pausedMs)) >= const Duration(minutes: 1);
-    if (stale) setState(() => _locked = true);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ReveProvider>();
     return MaterialApp(
       title: 'reve — GitHub cloud storage',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
       theme: reveTheme(Brightness.light),
       darkTheme: reveTheme(Brightness.dark),
-      home: _locked
-          ? LockScreen(onUnlock: () => setState(() => _locked = false))
-          : const ExplorerScreen(),
+      home: const ExplorerScreen(),
     );
   }
 }
