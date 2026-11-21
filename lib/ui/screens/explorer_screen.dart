@@ -873,6 +873,14 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     setState(() => _selected.add(item.path));
   }
 
+  /// A link that actually serves the bytes: public assets use the stable
+  /// release URL, private ones get a short-lived signed URL.
+  Future<String?> _resolveLink(ReveProvider provider, GithubFileItem item) async {
+    if (item.isDirectory) return null;
+    if (item.isAsset) return provider.streamUrlFor(item);
+    return provider.downloadUrlFor(item);
+  }
+
   /// Reads the bytes through the API (so private repositories work) and hands
   /// them to the system save sheet; the bar under the breadcrumbs follows.
   Future<void> _download(ReveProvider provider, GithubFileItem item) async {
@@ -884,7 +892,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       // Release assets can be gigabytes: let the browser's download manager
       // stream them instead of buffering the whole file in the app's memory.
       if (item.isAsset) {
-        final url = provider.downloadUrlFor(item);
+        final url = await _resolveLink(provider, item);
         if (url != null) {
           await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
           _snack('Opening download link for ${item.name}');
@@ -916,6 +924,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   Future<void> _showItemSheet(ReveProvider provider, GithubFileItem item) async {
     final cs = Theme.of(context).colorScheme;
     final link = item.isDirectory ? null : provider.downloadUrlFor(item);
+    Future<String?> resolveLink() => _resolveLink(provider, item);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -963,9 +972,11 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   leading: const Icon(Icons.link_rounded),
                   title: const Text('Copy download link'),
                   subtitle: const Text('Works for the system download manager'),
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(sheetContext);
-                    Clipboard.setData(ClipboardData(text: link));
+                    final url = await resolveLink() ?? link;
+                    if (url == null) return;
+                    await Clipboard.setData(ClipboardData(text: url));
                     _snack('Download link copied');
                   },
                 ),
@@ -973,9 +984,11 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   leading: const Icon(Icons.open_in_browser_rounded),
                   title: const Text('Open download link'),
                   subtitle: const Text('Best for files too large to hold in memory'),
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(sheetContext);
-                    launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication);
+                    final url = await resolveLink() ?? link;
+                    if (url == null) return;
+                    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                   },
                 ),
               ],
