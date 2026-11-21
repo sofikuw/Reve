@@ -655,7 +655,11 @@ class GithubService {
       uri += '?ref=${Uri.encodeComponent(branch)}';
     }
     final response = await _get(Uri.parse(uri), headers: _headers(token));
-    if (response.statusCode == 404) return const AssetManifest({}, null);
+    // A fresh repo has no index yet. It must be mutable: the caller writes the
+    // first asset into this very map.
+    if (response.statusCode == 404) {
+      return AssetManifest(<String, Map<String, dynamic>>{}, null);
+    }
     if (response.statusCode != 200) {
       throw Exception('Could not read the large-file list (${response.statusCode}).');
     }

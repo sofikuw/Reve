@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:math';
 import 'dart:typed_data';
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../config.dart';
@@ -22,7 +20,6 @@ class ReveProvider with ChangeNotifier {
   static const String _activeIdKey = 'active_account_id';
   static const String _autoSortKey = 'auto_sort_uploads';
   static const String _updateChannelKey = 'update_channel';
-  static const String _pinHashKey = 'pin_hash';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
@@ -132,15 +129,6 @@ class ReveProvider with ChangeNotifier {
     init();
   }
 
-  String? _pinHash;
-  int _pinLength = 0;
-
-  /// The salted-SHA256 of the app-lock PIN, or null when the lock is off.
-  String? get pinHash => _pinHash;
-  bool get isLocked => _pinHash != null;
-  /// How many digits the PIN is, 0 when no lock is set.
-  int get pinLength => _pinLength;
-
   Future<void> init() async {
     try {
       final box = await Hive.openBox(_boxName);
@@ -153,8 +141,9 @@ class ReveProvider with ChangeNotifier {
       _updateChannel = box.get(_updateChannelKey, defaultValue: 'stable') == 'beta'
           ? UpdateChannel.beta
           : UpdateChannel.stable;
-      _pinHash = box.get(_pinHashKey);
-      _pinLength = box.get('pin_length', defaultValue: 0) as int;
+      // Drop leftovers from the removed app-lock feature.
+      await box.delete('pin_hash');
+      await box.delete('pin_length');
 
       final activeId = box.get(_activeIdKey);
       if (_accounts.isNotEmpty) {
@@ -601,59 +590,6 @@ class ReveProvider with ChangeNotifier {
     } catch (_) {
       return null;
     }
-  }
-
-  /// Records the app-lock PIN as a salted SHA-256 hash — the PIN itself is
-  /// never stored, so a screenshot or memory dump of the box does not reveal it.
-  Future<void> setPin(String pin) async {
-    final error = _pinError(pin);
-    if (error != null) {
-      _errorMessage = error;
-      notifyListeners();
-      return;
-    }
-    final box = await Hive.openBox(_boxName);
-    final salt = Random().nextInt(0x100000).toRadixString(16).padLeft(5, '0');
-    final digest = crypto.sha256.convert(utf8.encode(salt + pin)).toString();
-    await box.put(_pinHashKey, '$salt:${pin.length}:$digest');
-    _pinHash = box.get(_pinHashKey);
-    _pinLength = pin.length;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  String? _pinError(String pin) {
-    if (pin.length < 4) return 'PIN must be at least 4 digits';
-    if (pin.length > 8) return 'PIN is too long';
-    if (!pin.runes.every((r) => r >= 48 && r <= 57)) {
-      return 'Use digits only';
-    }
-    return null;
-  }
-
-  /// Clears the PIN; the app opens without one.
-  Future<void> clearPin() async {
-    try {
-      final box = await Hive.openBox(_boxName);
-      await box.delete(_pinHashKey);
-      await box.delete('pin_length');
-    } catch (_) {
-      // Already gone.
-    }
-    _pinHash = null;
-    _pinLength = 0;
-    notifyListeners();
-  }
-
-  Future<bool> verifyPin(String pin) async {
-    final hash = _pinHash;
-    if (hash == null) return false;
-    final parts = hash.split(':');
-    if (parts.length != 3) return false;
-    final salt = parts[0];
-    if (pin.length != _pinLength) return false;
-    return crypto.sha256.convert(utf8.encode(salt + pin)).toString() ==
-        parts[2];
   }
 
   /// A commit can change any ancestor listing, so drop them all. They refill
