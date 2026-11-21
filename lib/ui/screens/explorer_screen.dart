@@ -1099,63 +1099,20 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     );
     if (first.ok) return first;
     try {
+      final retryBytes = await file.readAsBytes();
       return await provider.uploadLargeFile(
         fileName: file.name,
-        length: 0,
-        bytes: await file.readAsBytes(),
+        length: retryBytes.lengthInBytes,
+        bytes: retryBytes,
       );
     } catch (e) {
       return UploadResult(false, '${first.message} · retry failed: ${_explain(e)}');
     }
   }
 
-  /// Reads a pick without trusting its reported size: buffer up to [limit]
-  /// bytes and, if the file is bigger, hand back a stream that replays the
-  /// buffer and keeps reading. Peak memory stays at the ceiling, so a 1 GB
-  /// video uploads instead of crashing the app.
-  Future<_Prepared> _readUpTo(PlatformFile file, int limit) async {
-    final iterator = StreamIterator<List<int>>(file.readAsByteStream());
-    final head = <List<int>>[];
-    var total = 0;
-    while (await iterator.moveNext()) {
-      final chunk = iterator.current;
-      total += chunk.length;
-      if (total > limit) {
-        return _Prepared(_replay(head, iterator), null);
-      }
-      head.add(chunk);
-    }
-    final bytes = Uint8List(total);
-    var offset = 0;
-    for (final chunk in head) {
-      bytes.setRange(offset, offset + chunk.length, chunk);
-      offset += chunk.length;
-    }
-    return _Prepared(null, bytes);
-  }
-
-  /// Re-emits the buffered head, then everything still left in [rest].
-  Stream<List<int>> _replay(List<List<int>> head, StreamIterator<List<int>> rest) async* {
-    for (final chunk in head) {
-      yield chunk;
-    }
-    while (await rest.moveNext()) {
-      yield rest.current;
-    }
-  }
-
-  /// A pick that cannot be streamed at all is read in one go; the error is
-  /// surfaced rather than swallowed.
-  Future<_Prepared> _prepare(PlatformFile file) async {
-    try {
-      return await _readUpTo(file, ReveProvider.maxUploadBytes);
-    } catch (_) {
-      final bytes = await file.readAsBytes();
-      return bytes.lengthInBytes <= ReveProvider.maxUploadBytes
-          ? _Prepared(null, bytes)
-          : _Prepared(Stream<List<int>>.value(bytes), null);
-    }
-  }
+  /// A pick whose size the platform could not report is read into memory once;
+  /// GitHub needs a Content-Length, so an unknown-size stream cannot be sent.
+  Future<Uint8List> _prepare(PlatformFile file) => file.readAsBytes();
 
   Future<void> _uploadFiles(ReveProvider provider, List<PlatformFile> work) async {
     final failed = <PlatformFile>[];
@@ -1176,14 +1133,13 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           }
           continue;
         }
-        // Unknown size: read up to the ceiling. Small picks become one commit,
-        // anything bigger continues streaming into a release asset.
-        final prepared = await _prepare(file);
-        if (prepared.stream != null) {
+        // Unknown size: read it once, then route by the real byte count.
+        final bytes = await _prepare(file);
+        if (bytes.lengthInBytes > ReveProvider.maxUploadBytes) {
           final outcome = await provider.uploadLargeFile(
             fileName: file.name,
-            length: 0,
-            source: prepared.stream,
+            length: bytes.lengthInBytes,
+            bytes: bytes,
           );
           if (outcome.ok) {
             large++;
@@ -1193,7 +1149,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
           }
           continue;
         }
-        batch.add(BatchedFile(name: file.name, bytes: prepared.bytes!));
+        batch.add(BatchedFile(name: file.name, bytes: bytes));
       } catch (e) {
         failed.add(file);
         reasons.add('${file.name} — ${_explain(e)}');
@@ -1510,15 +1466,6 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message), action: action));
   }
-}
-
-/// One picked file ready to upload: either fully read, or a stream that still
-/// has reader attached (used for anything over the small-file ceiling).
-class _Prepared {
-  final Stream<List<int>>? stream;
-  final Uint8List? bytes;
-
-  const _Prepared(this.stream, this.bytes);
 }
 
 class _Welcome extends StatelessWidget {

@@ -1025,23 +1025,16 @@ class ReveProvider with ChangeNotifier {
     _startProgress('Uploading $fileName…');
     final path = _targetPathFor(fileName);
     final report = _progressReporter(fileName);
-    // A picker that cannot tell us the size leaves length at 0; the request is
-    // sent chunked and we count the bytes as they go, so the index still knows
-    // how large the upload really was.
-    var size = length > 0 ? length : (bytes?.lengthInBytes ?? 0);
-    Stream<List<int>>? body = source;
-    if (length <= 0 && source != null) {
-      body = source.map((chunk) {
-        size += chunk.length;
-        return chunk;
-      });
-    }
-    void progress(double? fraction) {
-      if (fraction == null) {
-        _reportProgress(null);
-      } else {
-        report(fraction);
-      }
+    // GitHub needs a Content-Length. A buffered pick knows it from the byte
+    // array; a streamed pick must have been measured before it got here.
+    final size = bytes?.lengthInBytes ?? length;
+    if (size <= 0) {
+      _isUploading = false;
+      _endProgress();
+      return const UploadResult(
+        false,
+        'Could not determine this file\'s size, so it was not uploaded.',
+      );
     }
 
     try {
@@ -1059,10 +1052,10 @@ class ReveProvider with ChangeNotifier {
         releaseId: releaseId,
         name: assetName,
         mime: GithubService.mimeFor(fileName),
-        length: length,
+        length: size,
         bytes: bytes,
-        source: body,
-        onProgress: progress,
+        source: source,
+        onProgress: report,
       );
       final id = (uploaded['id'] as num).toInt();
 

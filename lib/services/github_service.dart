@@ -592,6 +592,13 @@ class GithubService {
     Stream<List<int>>? source,
     void Function(double? fraction)? onProgress,
   }) async {
+    // GitHub's asset endpoint refuses chunked bodies ("400 Bad Content-Length"),
+    // so a request must always carry the real length. A buffered pick knows it
+    // from the byte array; a streamed pick gets it from the file picker.
+    final size = bytes != null ? bytes.lengthInBytes : length;
+    if (size <= 0) {
+      throw Exception('Could not determine this file\'s size, so it was not uploaded.');
+    }
     final request = http.StreamedRequest(
       'POST',
       Uri.parse('$uploadsUrl/repos/$owner/$repo/releases/$releaseId/assets'
@@ -601,10 +608,7 @@ class GithubService {
         ..._headers(token),
         'Content-Type': mime,
       })
-      // 0 means "the picker could not tell us": let the request go out
-      // chunked. GitHub accepts that (verified against a 45 MB asset), so a
-      // phone pick with no size still uploads instead of being buffered.
-      ..contentLength = length > 0 ? length : null;
+      ..contentLength = size;
 
     final client = http.Client();
     try {
@@ -620,7 +624,7 @@ class GithubService {
         await for (final chunk in chunks) {
           request.sink.add(chunk);
           sent += chunk.length;
-          onProgress?.call(length > 0 ? sent / length : null);
+          onProgress?.call(sent / size);
           await Future<void>.delayed(Duration.zero);
         }
       } finally {
