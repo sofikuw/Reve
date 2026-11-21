@@ -37,7 +37,7 @@ class GithubService {
   /// prerelease so it never shows up as the repository's "latest release".
   static const String assetTag = 'reve-assets';
   static const String manifestPath = '.reve/assets.json';
-  static const Map<String, int> _releaseIds = {};
+  static final Map<String, int> _releaseIds = {};
   static final Map<String, String> _signedUrls = {};
   static final Map<String, DateTime> _signedAt = {};
 
