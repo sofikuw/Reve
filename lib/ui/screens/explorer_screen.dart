@@ -350,15 +350,6 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 ),
               ),
             ),
-          IconButton(
-            tooltip: 'Refresh',
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            onPressed: () {
-              provider.fetchContents();
-              provider.checkForUpdates();
-            },
-          ),
         ],
       ),
     );
@@ -806,43 +797,56 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       );
     }
 
+    Future<void> refresh() async {
+      await provider.fetchContents();
+      provider.checkForUpdates();
+    }
+
     if (_grid) {
-      return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 130),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 170,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 0.86,
+      return RefreshIndicator(
+        onRefresh: refresh,
+        child: GridView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 130),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 170,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.86,
+          ),
+          itemCount: files.length,
+          itemBuilder: (context, index) {
+            final item = files[index];
+            return FileCard(
+              item: item,
+              imageUrl: provider.downloadUrlFor(item),
+              selected: _selected.contains(item.path),
+              selecting: _selected.isNotEmpty,
+              onTap: () => _activate(provider, item),
+              onLongPress: () => _onLongPress(item),
+            );
+          },
         ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 130),
         itemCount: files.length,
         itemBuilder: (context, index) {
           final item = files[index];
-          return FileCard(
+          return FileRow(
             item: item,
-            imageUrl: provider.downloadUrlFor(item),
             selected: _selected.contains(item.path),
             selecting: _selected.isNotEmpty,
             onTap: () => _activate(provider, item),
             onLongPress: () => _onLongPress(item),
           );
         },
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 130),
-      itemCount: files.length,
-      itemBuilder: (context, index) {
-        final item = files[index];
-        return FileRow(
-          item: item,
-          selected: _selected.contains(item.path),
-          selecting: _selected.isNotEmpty,
-          onTap: () => _activate(provider, item),
-          onLongPress: () => _onLongPress(item),
-        );
-      },
+      ),
     );
   }
 
