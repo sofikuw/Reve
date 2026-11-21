@@ -114,22 +114,24 @@ jobs:
         # background colour, so every launcher mask shape is covered.
         run: cp -r assets/android/. android/app/src/main/res/
 
-      - name: Allow network access in release builds
+      - name: Allow network access and APK installs in release builds
         # flutter create only grants INTERNET in the debug/profile manifests, so a
-        # release APK fails with "Failed host lookup: github.com".
+        # release APK fails with "Failed host lookup: github.com". Installing an
+        # update from inside the app also needs REQUEST_INSTALL_PACKAGES on Android 8+.
         run: |
           python3 - <<'PY'
           import pathlib
           p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
           s = p.read_text()
-          if 'android.permission.INTERNET' not in s:
-              s = s.replace(
-                  '<application',
-                  '<uses-permission android:name="android.permission.INTERNET"/>\n\n    <application',
-                  1,
-              )
-              p.write_text(s)
-          print(s.split('<application')[0][-260:])
+          for permission in ('android.permission.INTERNET', 'android.permission.REQUEST_INSTALL_PACKAGES'):
+              if permission not in s:
+                  s = s.replace(
+                      '<application',
+                      f'<uses-permission android:name="{permission}"/>\n\n    <application',
+                      1,
+                  )
+          p.write_text(s)
+          print(s.split('<application')[0][-400:])
           PY
 
       - name: Restore the release signing key

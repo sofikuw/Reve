@@ -1346,6 +1346,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   Future<void> _openUpdates() async {
     final provider = context.read<ReveProvider>();
     final opening = provider.checkForUpdates(manual: true);
+    final apkUrl = ValueNotifier<String?>(null);
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => ListenableBuilder(
@@ -1389,6 +1390,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   if (asset == null) {
                     throw Exception('This release has no APK attached.');
                   }
+                  apkUrl.value = asset.url;
                   final path = await downloadApk(
                     asset,
                     onProgress: (fraction) {
@@ -1505,7 +1507,15 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                     onPressed: () => Navigator.of(dialogContext).pop(),
                     child: const Text('Close'),
                   ),
-                  if (update != null && !busy)
+                  if (error != null && apkUrl.value != null)
+                    TextButton(
+                      onPressed: () => launchUrl(
+                        Uri.parse(apkUrl.value!),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      child: const Text('Open APK link'),
+                    )
+                  else if (update != null && !busy)
                     TextButton(
                       onPressed: () => launchUrl(
                         Uri.parse(update.pageUrl),
@@ -1534,6 +1544,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
         },
       ),
     );
+    apkUrl.dispose();
     await opening;
   }
 

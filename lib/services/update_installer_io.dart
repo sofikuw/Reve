@@ -49,6 +49,8 @@ Future<void> installApk(String path) async {
     type: 'application/vnd.android.package-archive',
   );
   if (result.type != ResultType.done) {
-    throw Exception(result.message.isEmpty ? 'Installer could not open the APK.' : result.message);
+    final why = result.message.isEmpty ? 'the installer refused the file' : result.message;
+    throw Exception('Could not open the APK: $why. Allow this app to install '
+        'unknown apps in Android settings, then try again.');
   }
 }
