@@ -131,6 +131,7 @@ class FileRow extends StatelessWidget {
   final bool selecting;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback? onMore;
 
   const FileRow({
     super.key,
@@ -139,6 +140,7 @@ class FileRow extends StatelessWidget {
     required this.selecting,
     required this.onTap,
     required this.onLongPress,
+    this.onMore,
   });
 
   @override
@@ -209,6 +211,19 @@ class FileRow extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (onMore != null) ...[
+                  const SizedBox(width: 2),
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: IconButton(
+                      tooltip: 'More actions',
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.more_horiz_rounded, size: 19),
+                      onPressed: onMore,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -226,6 +241,7 @@ class FileCard extends StatelessWidget {
   final bool selecting;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback? onMore;
 
   const FileCard({
     super.key,
@@ -235,6 +251,7 @@ class FileCard extends StatelessWidget {
     required this.selecting,
     required this.onTap,
     required this.onLongPress,
+    this.onMore,
   });
 
   @override
@@ -292,6 +309,23 @@ class FileCard extends StatelessWidget {
                       ),
                     if (item.isAsset)
                       const Positioned(top: 6, right: 6, child: CloudBadge()),
+                    if (onMore != null)
+                      Positioned(
+                        bottom: 6,
+                        right: 6,
+                        child: Material(
+                          color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: onMore,
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.more_horiz_rounded, size: 17),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),

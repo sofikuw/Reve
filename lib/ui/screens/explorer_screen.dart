@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -824,6 +825,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
               selecting: _selected.isNotEmpty,
               onTap: () => _activate(provider, item),
               onLongPress: () => _onLongPress(item),
+              onMore: () => _showItemSheet(provider, item),
             );
           },
         ),
@@ -844,6 +846,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             selecting: _selected.isNotEmpty,
             onTap: () => _activate(provider, item),
             onLongPress: () => _onLongPress(item),
+            onMore: () => _showItemSheet(provider, item),
           );
         },
       ),
@@ -862,7 +865,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     if (item.isDirectory) {
       await provider.navigateToFolder(item.path);
     } else {
-      await _showItemSheet(provider, item);
+      await _preview(item);
     }
   }
 
@@ -878,6 +881,16 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       return;
     }
     try {
+      // Release assets can be gigabytes: let the browser's download manager
+      // stream them instead of buffering the whole file in the app's memory.
+      if (item.isAsset) {
+        final url = provider.downloadUrlFor(item);
+        if (url != null) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+          _snack('Opening download link for ${item.name}');
+          return;
+        }
+      }
       final bytes = await provider.readBytes(item, label: 'Downloading ${item.name}');
       if (!mounted) return;
       final saved = await FilePicker.saveFile(
@@ -902,6 +915,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
 
   Future<void> _showItemSheet(ReveProvider provider, GithubFileItem item) async {
     final cs = Theme.of(context).colorScheme;
+    final link = item.isDirectory ? null : provider.downloadUrlFor(item);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -944,6 +958,27 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                     _openOnGithub(provider, item);
                   },
                 ),
+              if (link != null) ...[
+                ListTile(
+                  leading: const Icon(Icons.link_rounded),
+                  title: const Text('Copy download link'),
+                  subtitle: const Text('Works for the system download manager'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Clipboard.setData(ClipboardData(text: link));
+                    _snack('Download link copied');
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.open_in_browser_rounded),
+                  title: const Text('Open download link'),
+                  subtitle: const Text('Best for files too large to hold in memory'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication);
+                  },
+                ),
+              ],
               ListTile(
                 leading: Icon(Icons.delete_outline, color: cs.error),
                 title: Text('Delete', style: TextStyle(color: cs.error)),
