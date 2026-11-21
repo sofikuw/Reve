@@ -22,7 +22,8 @@ Future<String> downloadApk(
       await response.stream.drain<void>();
       throw Exception('Download failed (HTTP ${response.statusCode}).');
     }
-    final total = response.contentLength > 0 ? response.contentLength : asset.size;
+    final reported = response.contentLength;
+    final total = reported != null && reported > 0 ? reported : asset.size;
     var received = 0;
     await for (final chunk in response.stream) {
       sink.add(chunk);
