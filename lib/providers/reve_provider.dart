@@ -20,6 +20,10 @@ class ReveProvider with ChangeNotifier {
   static const String _activeIdKey = 'active_account_id';
   static const String _autoSortKey = 'auto_sort_uploads';
   static const String _updateChannelKey = 'update_channel';
+  static const String _reposKey = 'cached_repositories';
+  static const String _repoIdKey = 'cached_repo_id';
+  static const String _branchKey = 'cached_branch';
+  static const String _pathKey = 'cached_path';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
@@ -138,20 +142,53 @@ class ReveProvider with ChangeNotifier {
         ..addAll((rawAccounts as List)
             .map((e) => GithubAccount.fromJson(Map<String, dynamic>.from(e as Map))));
       _autoSortUploads = box.get(_autoSortKey, defaultValue: true) as bool;
-      _updateChannel = box.get(_updateChannelKey, defaultValue: 'stable') == 'beta'
+      final savedChannel = box.get(_updateChannelKey) as String?;
+      _updateChannel = savedChannel == 'beta'
           ? UpdateChannel.beta
-          : UpdateChannel.stable;
+          : savedChannel == 'stable'
+              ? UpdateChannel.stable
+              // A beta build should look for beta updates on first launch.
+              : AppConfig.channel == 'beta'
+                  ? UpdateChannel.beta
+                  : UpdateChannel.stable;
       // Drop leftovers from the removed app-lock feature.
       await box.delete('pin_hash');
       await box.delete('pin_length');
+
+      // Paint from disk before touching the network. Cold starts used to wait
+      // for repos → branches → listing → assets → updates in sequence.
+      final disk = await Hive.openBox('reve_disk_cache');
+      _diskCache = {
+        for (final key in disk.keys)
+          if (disk.get(key) is Map)
+            key.toString(): Map<String, dynamic>.from(disk.get(key) as Map),
+      };
+      final cachedRepos = box.get(_reposKey);
+      if (cachedRepos is List) {
+        _repositories = cachedRepos
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      final cachedId = box.get(_repoIdKey);
+      if (cachedId != null) {
+        _selectedRepo = _firstOrNull(_repositories, (r) => r['id'] == cachedId);
+      }
+      _selectedBranch = box.get(_branchKey) as String?;
+      _currentPath = box.get(_pathKey) as String? ?? '';
+      final cachedListing = _diskItems(_listingKey);
+      if (cachedListing.isNotEmpty) {
+        _files = cachedListing;
+        _listingCache[_listingKey] = cachedListing;
+      }
 
       final activeId = box.get(_activeIdKey);
       if (_accounts.isNotEmpty) {
         _activeAccount = _firstOrNull(_accounts, (a) => a.id == activeId) ?? _accounts.first;
       }
       notifyListeners();
-      if (_activeAccount != null) await fetchRepositories();
-      await checkForUpdates();
+      // Revalidate in the background; neither call blocks the first paint.
+      if (_activeAccount != null) fetchRepositories();
+      checkForUpdates();
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -168,6 +205,10 @@ class ReveProvider with ChangeNotifier {
     }
     await box.put(_autoSortKey, _autoSortUploads);
     await box.put(_updateChannelKey, _updateChannel == UpdateChannel.beta ? 'beta' : 'stable');
+    await box.put(_reposKey, _repositories);
+    if (_selectedRepo != null) await box.put(_repoIdKey, _selectedRepo!['id']);
+    if (_selectedBranch != null) await box.put(_branchKey, _selectedBranch);
+    await box.put(_pathKey, _currentPath);
   }
 
   // ---------------------------------------------------------------------------
@@ -338,7 +379,8 @@ class ReveProvider with ChangeNotifier {
 
   Future<void> fetchRepositories() async {
     if (_activeAccount == null) return;
-    _isLoading = true;
+    final hadCache = _repositories.isNotEmpty;
+    _isLoading = !hadCache;
     notifyListeners();
     try {
       final repos = await GithubService.getRepositories(_activeAccount!.token);
@@ -686,6 +728,7 @@ class ReveProvider with ChangeNotifier {
 
   Future<void> navigateToFolder(String path) async {
     _currentPath = path;
+    _saveToBox();
     await fetchContents();
   }
 
@@ -694,6 +737,7 @@ class ReveProvider with ChangeNotifier {
     final parts = _currentPath.split('/');
     parts.removeLast();
     _currentPath = parts.join('/');
+    _saveToBox();
     await fetchContents();
   }
 
