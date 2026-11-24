@@ -30,12 +30,18 @@ Future<String> downloadApk(
       received += chunk.length;
       onProgress?.call(total > 0 ? received / total : null, received);
     }
+    await sink.close();
+    client.close();
+    final saved = await File(path).length();
+    if (asset.size > 0 && saved != asset.size) {
+      throw Exception('Download incomplete: $saved of ${asset.size} bytes. Try again.');
+    }
     return path;
   } finally {
     try {
       await sink.close();
     } catch (_) {
-      // The download already failed; the error above says why.
+      // Already closed on the success path; ignore here.
     }
     client.close();
   }
