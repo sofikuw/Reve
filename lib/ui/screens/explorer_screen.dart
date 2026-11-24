@@ -913,7 +913,13 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   }
 
   Future<void> _openOnGithub(ReveProvider provider, GithubFileItem item) async {
-    final url = item.htmlUrl ?? provider.downloadUrlFor(item);
+    // A private repo's GitHub page 404s in a browser that is not signed in.
+    // Assets get a signed URL; committed files have to be downloaded in-app.
+    if (!item.isAsset && provider.selectedRepo?['private'] == true) {
+      _snack('Private file — use Download to save it');
+      return;
+    }
+    final url = await _resolveLink(provider, item);
     if (url == null) {
       _snack('No URL for ${item.name}');
       return;
