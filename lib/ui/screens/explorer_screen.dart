@@ -1412,6 +1412,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             builder: (dialogContext, setState) {
               String? error;
               double? progress;
+              var downloaded = 0;
               var busy = false;
 
               Future<void> install() async {
@@ -1419,6 +1420,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   busy = true;
                   error = null;
                   progress = 0;
+                  downloaded = 0;
                 });
                 try {
                   var asset = update?.apkFor(await deviceAbi());
@@ -1447,9 +1449,12 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   apkUrl.value = asset.url;
                   final path = await downloadApk(
                     asset,
-                    onProgress: (fraction) {
+                    onProgress: (fraction, loaded) {
                       if (dialogContext.mounted) {
-                        setState(() => progress = fraction);
+                        setState(() {
+                          progress = fraction;
+                          downloaded = loaded;
+                        });
                       }
                     },
                   );
@@ -1588,7 +1593,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                             )
                           : const Icon(Icons.download_rounded),
                       label: Text(busy
-                          ? 'Downloading${progress == null ? '' : ' ${(progress! * 100).round()}%'}'
+                          ? 'Downloading ${(downloaded / 1024 / 1024).toStringAsFixed(1)} MB${progress == null ? '' : ' · ${(progress! * 100).round()}%'}'
                           : 'Download & install'),
                     ),
                 ],

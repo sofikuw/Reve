@@ -9,7 +9,7 @@ import 'updater.dart';
 /// this never needs to hold the whole file in memory.
 Future<String> downloadApk(
   UpdateAsset asset, {
-  void Function(double?)? onProgress,
+  void Function(double? fraction, int loaded)? onProgress,
 }) async {
   final path = '${Directory.systemTemp.path}/${asset.name}';
   final sink = File(path).openWrite();
@@ -28,7 +28,7 @@ Future<String> downloadApk(
     await for (final chunk in response.stream.timeout(const Duration(minutes: 5))) {
       sink.add(chunk);
       received += chunk.length;
-      onProgress?.call(total > 0 ? received / total : null);
+      onProgress?.call(total > 0 ? received / total : null, received);
     }
     return path;
   } finally {

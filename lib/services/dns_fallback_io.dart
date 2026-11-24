@@ -16,6 +16,17 @@ void installDnsFallback() {
 
 const Duration _timeout = Duration(seconds: 12);
 
+/// DoH can return an IP whose route is dead from a particular network (the
+/// classic `Connection timed out, host: 20.205.243.161`). These GitHub frontends
+/// are reachable over ordinary HTTPS and are used as a last resort.
+const List<String> _githubFrontends = [
+  '140.82.114.4',
+  '140.82.112.3',
+  '20.205.243.166',
+  '20.27.177.113',
+  '57.155.223.240',
+];
+
 /// Resolvers addressed by literal IP, with the path each one expects. Several
 /// are listed because phones behind a VPN or parental controls often block one
 /// of these addresses but not the others.
@@ -41,26 +52,32 @@ class _DohHttpOverrides extends HttpOverrides {
 
 Future<ConnectionTask<Socket>> _connect(Uri url, String? proxyHost, int? proxyPort) async {
   Socket? socket;
-  SocketException? lookupError;
+  Object? lastError;
   try {
     socket = await Socket.connect(url.host, url.port, timeout: _timeout);
   } on SocketException catch (error) {
-    if (!_isLookupFailure(error)) rethrow;
-    lookupError = error;
+    lastError = error;
   }
 
   if (socket == null) {
-    final addresses = await _lookup(url.host);
-    if (addresses == null || addresses.isEmpty) throw lookupError!;
-    for (final address in addresses) {
+    final resolved = await _lookup(url.host) ?? const <String>[];
+    final candidates = <String>[
+      ...resolved,
+      if (url.host.endsWith('github.com') || url.host.endsWith('githubusercontent.com'))
+        ..._githubFrontends,
+    ];
+    for (final address in candidates) {
       try {
         socket = await Socket.connect(address, url.port, timeout: _timeout);
+        lastError = null;
         break;
       } on SocketException catch (error) {
-        lookupError = error;
+        lastError = error;
+        // Do not keep handing out an address that just timed out.
+        _addresses[url.host]?.remove(address);
       }
     }
-    if (socket == null) throw lookupError!;
+    if (socket == null) throw lastError ?? const SocketException('No route to ${url.host}');
   }
 
   // With a connectionFactory the HttpClient does not do TLS itself: the
@@ -69,14 +86,6 @@ Future<ConnectionTask<Socket>> _connect(Uri url, String? proxyHost, int? proxyPo
     socket = await SecureSocket.secure(socket, host: url.host);
   }
   return ConnectionTask.fromSocket(Future<Socket>.value(socket), () {});
-}
-
-bool _isLookupFailure(SocketException error) {
-  final text = '${error.message} ${error.osError?.message ?? ''}'.toLowerCase();
-  return text.contains('host lookup') ||
-      text.contains('no address associated') ||
-      text.contains('name or service not known') ||
-      text.contains('nodename nor servname');
 }
 
 Future<List<String>?> _lookup(String host) async {

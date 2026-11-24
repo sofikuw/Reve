@@ -1079,14 +1079,27 @@ class ReveProvider with ChangeNotifier {
         // write would waste the bandwidth the user just spent.
       }
 
+      final oldIds = <int>{};
       final oldId = (previous?['id'] as num?)?.toInt();
-      if (oldId != null && oldId != id) {
+      if (oldId != null && oldId != id) oldIds.add(oldId);
+      // A failed index write leaves an older copy in the release; without this
+      // it shows up a second time at the root under its stripped name.
+      final display = GithubService.assetDisplayName(assetName);
+      for (final asset in _releaseAssets) {
+        final aid = (asset['id'] as num?)?.toInt();
+        final name = (asset['name'] as String?) ?? '';
+        if (aid == null || aid == id) continue;
+        if (name == assetName || GithubService.assetDisplayName(name) == display) {
+          oldIds.add(aid);
+        }
+      }
+      for (final staleId in oldIds) {
         try {
           await GithubService.deleteAsset(
             token: _activeAccount!.token,
             owner: owner,
             repo: repoName,
-            assetId: oldId,
+            assetId: staleId,
           );
         } catch (_) {
           // The new asset is live; a leftover old one is only wasted space.
@@ -1094,6 +1107,7 @@ class ReveProvider with ChangeNotifier {
       }
 
       await _dropCommittedFileAt(path);
+      _resetAssets();
       invalidateListings();
       await fetchContents();
       return UploadResult(true, '$fileName uploaded to $path', path: path);
@@ -1168,6 +1182,7 @@ class ReveProvider with ChangeNotifier {
           message: 'Restore ${item.path} via reve',
         );
       }
+      _resetAssets();
       invalidateListings();
       await fetchContents();
       return true;
