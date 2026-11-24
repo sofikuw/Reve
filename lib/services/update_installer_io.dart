@@ -25,7 +25,7 @@ Future<String> downloadApk(
     final reported = response.contentLength;
     final total = reported != null && reported > 0 ? reported : asset.size;
     var received = 0;
-    await for (final chunk in response.stream) {
+    await for (final chunk in response.stream.timeout(const Duration(minutes: 5))) {
       sink.add(chunk);
       received += chunk.length;
       onProgress?.call(total > 0 ? received / total : null);
@@ -50,7 +50,7 @@ Future<void> installApk(String path) async {
   );
   if (result.type != ResultType.done) {
     final why = result.message.isEmpty ? 'the installer refused the file' : result.message;
-    throw Exception('Could not open the APK: $why. Allow this app to install '
-        'unknown apps in Android settings, then try again.');
+    throw Exception('Installer returned ${result.type.name}: $why. '
+        'Allow this app to install unknown apps in Android settings, then try again.');
   }
 }
