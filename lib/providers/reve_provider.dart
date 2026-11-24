@@ -186,9 +186,18 @@ class ReveProvider with ChangeNotifier {
         _activeAccount = _firstOrNull(_accounts, (a) => a.id == activeId) ?? _accounts.first;
       }
       notifyListeners();
-      // Revalidate in the background; neither call blocks the first paint.
-      if (_activeAccount != null) fetchRepositories();
-      checkForUpdates();
+      // Revalidate only when the cached answer has gone stale; neither call
+      // blocks the first paint.
+      final reposAt = _tryParseDate(box.get('repos_at'));
+      final reposFresh = reposAt != null &&
+          DateTime.now().difference(reposAt) < const Duration(minutes: 10) &&
+          _repositories.isNotEmpty;
+      if (_activeAccount != null && !reposFresh) fetchRepositories();
+      final updatesAt = _tryParseDate(box.get('updates_at'));
+      if (updatesAt == null ||
+          DateTime.now().difference(updatesAt) > const Duration(minutes: 30)) {
+        checkForUpdates();
+      }
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
@@ -235,6 +244,8 @@ class ReveProvider with ChangeNotifier {
       );
       _update = latest != null && latest.isNewerThan(installed) ? latest : null;
       _updateError = null;
+      final box = await Hive.openBox(_boxName);
+      await box.put('updates_at', DateTime.now().toIso8601String());
     } catch (e) {
       if (request != _updateRequest) return;
       _updateError = e.toString();
@@ -386,6 +397,9 @@ class ReveProvider with ChangeNotifier {
       final repos = await GithubService.getRepositories(_activeAccount!.token);
       _repositories = repos;
       _errorMessage = null;
+      await _saveToBox();
+      final box = await Hive.openBox(_boxName);
+      await box.put('repos_at', DateTime.now().toIso8601String());
 
       final previousId = _selectedRepo?['id'];
       final keep = previousId != null

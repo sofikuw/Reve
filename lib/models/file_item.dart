@@ -34,8 +34,10 @@ class GithubFileItem {
         sha: json['sha'] as String,
         size: json['size'] as int? ?? 0,
         type: json['type'] as String,
-        downloadUrl: json['download_url'] as String?,
-        htmlUrl: json['html_url'] as String?,
+        downloadUrl: (json['download_url'] ?? json['downloadUrl']) as String?,
+        htmlUrl: (json['html_url'] ?? json['htmlUrl']) as String?,
+        assetId: (json['asset_id'] as num?)?.toInt(),
+        assetName: json['asset_name'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -44,8 +46,10 @@ class GithubFileItem {
         'sha': sha,
         'size': size,
         'type': type,
-        'downloadUrl': downloadUrl,
-        'htmlUrl': htmlUrl,
+        'download_url': downloadUrl,
+        'html_url': htmlUrl,
+        'asset_id': assetId,
+        'asset_name': assetName,
       };
 
   factory GithubFileItem.fromAsset(
