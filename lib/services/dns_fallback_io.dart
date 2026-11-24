@@ -77,7 +77,7 @@ Future<ConnectionTask<Socket>> _connect(Uri url, String? proxyHost, int? proxyPo
         _addresses[url.host]?.remove(address);
       }
     }
-    if (socket == null) throw lastError ?? const SocketException('No route to ${url.host}');
+    if (socket == null) throw lastError ?? SocketException('No route to ${url.host}');
   }
 
   // With a connectionFactory the HttpClient does not do TLS itself: the
