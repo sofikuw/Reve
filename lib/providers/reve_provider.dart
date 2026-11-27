@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../config.dart';
 import '../models/account.dart';
 import '../models/file_item.dart';
+import '../models/trash_entry.dart';
 import '../services/github_service.dart';
 import '../services/photo_backup.dart';
 import '../services/updater.dart';
@@ -33,6 +34,7 @@ class ReveProvider with ChangeNotifier {
   static const String _backupLimitKey = 'backup_limit';
   static const String _backupMaxKey = 'backup_max_bytes';
   static const String _backupVideosKey = 'backup_videos';
+  static const String _trashKey = 'trash_entries';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
@@ -91,6 +93,7 @@ class ReveProvider with ChangeNotifier {
   bool _backingUp = false;
   final Set<String> _backupSeen = {};
   DateTime? _backupAt;
+  final List<TrashEntry> _trash = [];
   int? _backupRepoId;
   String _backupFolder = 'Camera';
   int _backupLimit = 6;
@@ -147,6 +150,7 @@ class ReveProvider with ChangeNotifier {
   int get backupLimit => _backupLimit;
   int get backupMaxBytes => _backupMaxBytes;
   bool get backupVideos => _backupVideos;
+  List<TrashEntry> get trash => List.unmodifiable(_trash);
   bool get backingUp => _backingUp;
   DateTime? get backupAt => _backupAt;
   String get backupSince {
@@ -212,6 +216,13 @@ class ReveProvider with ChangeNotifier {
       _backupLimit = box.get(_backupLimitKey, defaultValue: 6) as int;
       _backupMaxBytes = box.get(_backupMaxKey, defaultValue: 2 * 1024 * 1024 * 1024) as int;
       _backupVideos = box.get(_backupVideosKey, defaultValue: true) as bool;
+      final savedTrash = box.get(_trashKey);
+      if (savedTrash is List) {
+        _trash
+          ..clear()
+          ..addAll(savedTrash
+              .map((e) => TrashEntry.fromJson(Map<String, dynamic>.from(e as Map))));
+      }
       final seen = box.get(_backupSeenKey);
       if (seen is List) _backupSeen.addAll(seen.map((e) => e.toString()));
       _backupAt = _tryParseDate(box.get(_backupAtKey));
@@ -269,6 +280,7 @@ class ReveProvider with ChangeNotifier {
     await box.put(_backupLimitKey, _backupLimit);
     await box.put(_backupMaxKey, _backupMaxBytes);
     await box.put(_backupVideosKey, _backupVideos);
+    await box.put(_trashKey, _trash.map((e) => e.toJson()).toList());
     await box.put(_backupSeenKey, _backupSeen.toList());
     if (_backupAt != null) await box.put(_backupAtKey, _backupAt!.toIso8601String());
   }
@@ -1311,22 +1323,11 @@ class ReveProvider with ChangeNotifier {
     notifyListeners();
     try {
       final msg = message ?? 'Delete ${item.path} via reve';
+      Map<String, dynamic>? removedAsset;
       if (item.isAsset) {
-        Map<String, dynamic>? removed;
-        await _mutateManifest((files) => removed = files.remove(item.path));
-        final id = (removed?['id'] as num?)?.toInt();
-        if (id != null) {
-          try {
-            await GithubService.deleteAsset(
-              token: _activeAccount!.token,
-              owner: owner,
-              repo: repoName,
-              assetId: id,
-            );
-          } catch (_) {
-            // The index no longer points at it, so it is unreachable anyway.
-          }
-        }
+        await _mutateManifest((files) => removedAsset = files.remove(item.path));
+        // Keep the release asset itself until the trash is emptied, so the
+        // file can be restored without re-uploading it.
       } else if (item.isDirectory) {
         await GithubService.deleteDirectory(
           token: _activeAccount!.token,
@@ -1348,8 +1349,24 @@ class ReveProvider with ChangeNotifier {
           branch: _selectedBranch,
         );
       }
-      // Restorable only while the blob may still exist in the history of a
-      // committed file — assets are gone, folders are not inlined back.
+      _trash.insert(
+        0,
+        TrashEntry(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          path: item.path,
+          name: item.name,
+          repoId: _selectedRepo?['id'] as int?,
+          branch: _selectedBranch,
+          deletedAt: DateTime.now(),
+          size: item.size,
+          message: msg,
+          isAsset: item.isAsset,
+          isDirectory: item.isDirectory,
+          sha: item.isAsset ? null : item.sha,
+          assetId: (removedAsset?['id'] as num?)?.toInt(),
+          assetName: removedAsset?['name'] as String?,
+        ),
+      );
       if (!item.isAsset && !item.isDirectory && item.size <= maxUndoBytes) {
         _lastDeleted = DeletedCommit(
           path: item.path,
@@ -1357,6 +1374,7 @@ class ReveProvider with ChangeNotifier {
           message: 'Restore ${item.path} via reve',
         );
       }
+      await _saveToBox();
       _resetAssets();
       invalidateListings();
       await fetchContents();
@@ -1367,6 +1385,195 @@ class ReveProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Restores a trashed item. Assets stay byte-identical in the release, so
+  /// this only re-adds them to the index; committed files are re-committed.
+  Future<bool> restoreTrash(TrashEntry entry) async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    try {
+      if (entry.isAsset && entry.assetId != null) {
+        await _mutateManifest((files) {
+          files[entry.path] = {
+            'id': entry.assetId,
+            'name': entry.assetName ?? '',
+            'size': entry.size,
+            'at': DateTime.now().toUtc().toIso8601String(),
+          };
+        });
+      } else if (!entry.isAsset && entry.sha != null) {
+        await GithubService.commitTree(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          entries: {entry.path: entry.sha},
+          message: entry.message,
+          branch: entry.branch ?? _selectedBranch,
+        );
+      }
+      _trash.removeWhere((e) => e.id == entry.id);
+      await _saveToBox();
+      _resetAssets();
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  Future<bool> purgeTrash(TrashEntry entry) async {
+    if (entry.isAsset && entry.assetId != null) {
+      try {
+        await GithubService.deleteAsset(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          assetId: entry.assetId!,
+        );
+      } catch (e) {
+        _errorMessage = e.toString();
+        return false;
+      }
+    }
+    _trash.removeWhere((e) => e.id == entry.id);
+    await _saveToBox();
+    return true;
+  }
+
+  Future<void> emptyTrash() async {
+    for (final entry in List<TrashEntry>.from(_trash)) {
+      await purgeTrash(entry);
+    }
+  }
+
+  /// Renames or moves an item (including a whole folder) in one operation.
+  Future<bool> moveItem(GithubFileItem item, String newPath) async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    final clean = newPath.replaceAll(RegExp(r'^/+|/+$'), '');
+    if (clean.isEmpty || clean == item.path) return false;
+    try {
+      final taken = await existingPaths();
+      if (taken.contains(clean)) {
+        _errorMessage = 'An item already exists at $clean';
+        return false;
+      }
+      if (item.isAsset) {
+        await _mutateManifest((files) {
+          if (item.isDirectory) {
+            final prefix = '${item.path}/';
+            final moving = files.keys.where((k) => k.startsWith(prefix)).toList();
+            for (final key in moving) {
+              final data = files.remove(key);
+              if (data != null) {
+                files['$clean/${key.substring(prefix.length)}'] = data;
+              }
+            }
+          } else {
+            final data = files.remove(item.path);
+            if (data != null) files[clean] = data;
+          }
+        });
+      } else {
+        final all = await GithubService.committedEntries(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          branch: _selectedBranch,
+        );
+        final changes = <String, String?>{};
+        if (item.isDirectory) {
+          final prefix = '${item.path}/';
+          for (final entry in all.entries) {
+            if (entry.key.startsWith(prefix)) {
+              changes[entry.key] = null;
+              changes['$clean/${entry.key.substring(prefix.length)}'] = entry.value;
+            }
+          }
+        } else {
+          final sha = all[item.path] ?? item.sha;
+          if (sha.isEmpty) return false;
+          changes[item.path] = null;
+          changes[clean] = sha;
+        }
+        await GithubService.commitTree(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          entries: changes,
+          message: 'Move ${item.path} to $clean via reve',
+          branch: _selectedBranch,
+        );
+      }
+      _resetAssets();
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  /// Copies a file or folder to another path without removing the original.
+  Future<bool> copyItem(GithubFileItem item, String destination) async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    final folder = destination.replaceAll(RegExp(r'^/+|/+$'), '');
+    if (folder.isEmpty) return false;
+    final name = item.name;
+    final clean = '$folder/$name';
+    try {
+      final taken = await existingPaths();
+      if (taken.contains(clean)) {
+        _errorMessage = 'An item already exists at $clean';
+        return false;
+      }
+      if (item.isAsset && !item.isDirectory) {
+        await _mutateManifest((files) {
+          final source = _assets[item.path];
+          if (source != null) files[clean] = Map<String, dynamic>.from(source);
+        });
+      } else if (!item.isAsset) {
+        final all = await GithubService.committedEntries(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          branch: _selectedBranch,
+        );
+        final changes = <String, String?>{};
+        if (item.isDirectory) {
+          final prefix = '${item.path}/';
+          for (final entry in all.entries) {
+            if (entry.key.startsWith(prefix)) {
+              changes['$clean/${entry.key.substring(prefix.length)}'] = entry.value;
+            }
+          }
+        } else {
+          final sha = all[item.path] ?? item.sha;
+          if (sha.isEmpty) return false;
+          changes[clean] = sha;
+        }
+        await GithubService.commitTree(
+          token: _activeAccount!.token,
+          owner: owner,
+          repo: repoName,
+          entries: changes,
+          message: 'Copy ${item.path} to $clean via reve',
+          branch: _selectedBranch,
+        );
+      } else {
+        _errorMessage = 'Copying asset folders is not supported yet';
+        return false;
+      }
+      _resetAssets();
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
     }
   }
 

@@ -17,6 +17,7 @@ import '../kit.dart';
 import '../theme.dart';
 import 'accounts_screen.dart';
 import 'preview_screen.dart';
+import 'trash_screen.dart';
 
 class ExplorerScreen extends StatefulWidget {
   const ExplorerScreen({super.key});
@@ -131,6 +132,12 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             onSelected: (value) {
               if (value == 'repo') _createRepository();
               if (value == 'accounts') _openAccounts();
+              if (value == 'trash') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TrashScreen()),
+                );
+              }
               if (value == 'updates') _openUpdates();
               if (value == 'sort') {
                 provider.toggleAutoSort(!provider.autoSortUploads);
@@ -151,6 +158,14 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 child: ListTile(
                   leading: Icon(Icons.manage_accounts_outlined),
                   title: Text('Accounts'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'trash',
+                child: ListTile(
+                  leading: Icon(Icons.delete_sweep_outlined),
+                  title: Text('Trash'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -937,6 +952,64 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  Future<void> _editPath(
+    ReveProvider provider,
+    GithubFileItem item,
+    String mode,
+  ) async {
+    final rename = mode == 'rename';
+    final controller = TextEditingController(
+      text: rename ? item.name : provider.currentPath,
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          switch (mode) {
+            'rename' => 'Rename ${item.name}',
+            'move' => 'Move ${item.name}',
+            _ => 'Copy ${item.name}',
+          },
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: rename ? 'New name' : 'Destination folder',
+            hintText: rename ? item.name : 'folder/subfolder',
+          ),
+          onSubmitted: (_) => Navigator.pop(dialogContext, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    final value = controller.text.trim().replaceAll(RegExp(r'^/+|/+$'), '');
+    controller.dispose();
+    if (saved != true) return;
+    if (value.isEmpty) return;
+    final parent = item.path.contains('/')
+        ? item.path.substring(0, item.path.lastIndexOf('/'))
+        : '';
+    final target = rename
+        ? (parent.isEmpty ? value : '$parent/$value')
+        : '$value/${item.name}';
+    final ok = mode == 'copy'
+        ? await provider.copyItem(item, value)
+        : await provider.moveItem(item, target);
+    _snack(ok
+        ? '${item.name} ${mode == 'copy' ? 'copied' : 'moved'}'
+        : provider.errorMessage ?? 'Could not complete the operation');
+  }
+
   Future<void> _showItemSheet(ReveProvider provider, GithubFileItem item) async {
     final cs = Theme.of(context).colorScheme;
     final link = item.isDirectory ? null : provider.downloadUrlFor(item);
@@ -964,6 +1037,30 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                     _preview(item);
                   },
                 ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Rename'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _editPath(provider, item, 'rename');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.drive_file_move_outlined),
+                title: const Text('Move to folder'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _editPath(provider, item, 'move');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy_all_outlined),
+                title: const Text('Copy to folder'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _editPath(provider, item, 'copy');
+                },
+              ),
               if (!item.isDirectory)
                 ListTile(
                   leading: const Icon(Icons.download_outlined),

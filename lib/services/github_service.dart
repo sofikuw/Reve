@@ -956,6 +956,19 @@ class GithubService {
     required String repo,
     String? branch,
   }) async {
+    return (await committedEntries(
+      token: token, owner: owner, repo: repo, branch: branch,
+    )).keys.toSet();
+  }
+
+  /// Every committed file path with its blob sha — one tree request, used for
+  /// conflict checks and for atomic rename/move/copy commits.
+  static Future<Map<String, String>> committedEntries({
+    required String token,
+    required String owner,
+    required String repo,
+    String? branch,
+  }) async {
     final ref = await _get(
       Uri.parse('$baseUrl/repos/$owner/$repo/git/ref/heads/${Uri.encodeComponent(branch ?? '')}'),
       headers: _headers(token),
@@ -980,9 +993,10 @@ class GithubService {
     if (tree.statusCode != 200) {
       throw Exception('Could not list the repository tree (${tree.statusCode}).');
     }
-    final entries = jsonDecode(tree.body) as Map<String, dynamic>;
+    final data = jsonDecode(tree.body) as Map<String, dynamic>;
     return {
-      for (final entry in entries['tree'] as List) entry['path'] as String
+      for (final entry in data['tree'] as List)
+        if (entry['type'] == 'blob') entry['path'] as String: entry['sha'] as String,
     };
   }
 
@@ -1011,7 +1025,7 @@ class GithubService {
     required String token,
     required String owner,
     required String repo,
-    required Map<String, String> entries,
+    required Map<String, String?> entries,
     required String message,
     String? branch,
   }) async {
