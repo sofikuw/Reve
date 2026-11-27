@@ -146,7 +146,7 @@ jobs:
           if 'pluginManagement {' in cfg and 'mavenCentral()' not in cfg:
               cfg = cfg.replace(
                   'pluginManagement {\n',
-                  'pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n',
+                  'pluginManagement {\n    repositories {\n        maven { url = uri("https://maven.aliyun.com/repository/public") }\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n',
                   1,
               )
               settings.write_text(cfg)
