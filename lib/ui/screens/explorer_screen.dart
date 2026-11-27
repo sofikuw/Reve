@@ -24,6 +24,7 @@ import 'rewind_screen.dart';
 import 'share_screen.dart';
 import 'text_editor_screen.dart';
 import 'preview_screen.dart';
+import 'scan_screen.dart';
 import 'transfers_screen.dart';
 import 'trash_screen.dart';
 import 'version_history_screen.dart';
@@ -141,6 +142,12 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             onSelected: (value) {
               if (value == 'repo') _createRepository();
               if (value == 'accounts') _openAccounts();
+              if (value == 'scan') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ScanScreen()),
+                );
+              }
               if (value == 'music') {
                 Navigator.push(
                   context,
@@ -202,6 +209,14 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 child: ListTile(
                   leading: Icon(Icons.manage_accounts_outlined),
                   title: Text('Accounts'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'scan',
+                child: ListTile(
+                  leading: Icon(Icons.document_scanner_outlined),
+                  title: Text('Scan document'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
