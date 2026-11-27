@@ -1000,6 +1000,32 @@ class GithubService {
     };
   }
 
+  /// Every file path and blob sha in a specific commit.
+  static Future<Map<String, String>> entriesAtCommit({
+    required String token,
+    required String owner,
+    required String repo,
+    required String commitSha,
+  }) async {
+    final commit = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/commits/$commitSha'),
+      headers: _headers(token),
+    );
+    if (commit.statusCode != 200) return {};
+    final treeSha =
+        (jsonDecode(commit.body) as Map<String, dynamic>)['tree']['sha'] as String;
+    final tree = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/trees/$treeSha?recursive=true'),
+      headers: _headers(token),
+    );
+    if (tree.statusCode != 200) return {};
+    final data = jsonDecode(tree.body) as Map<String, dynamic>;
+    return {
+      for (final entry in data['tree'] as List)
+        if (entry['type'] == 'blob') entry['path'] as String: entry['sha'] as String,
+    };
+  }
+
   /// Commits that touched one path, newest first.
   static Future<List<Map<String, dynamic>>> fileHistory({
     required String token,

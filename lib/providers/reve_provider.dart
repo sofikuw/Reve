@@ -7,6 +7,7 @@ import '../models/account.dart';
 import '../models/file_item.dart';
 import '../models/trash_entry.dart';
 import '../services/github_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/photo_backup.dart';
 import '../services/updater.dart';
 
@@ -35,6 +36,8 @@ class ReveProvider with ChangeNotifier {
   static const String _backupMaxKey = 'backup_max_bytes';
   static const String _backupVideosKey = 'backup_videos';
   static const String _trashKey = 'trash_entries';
+  static const String _wifiOnlyKey = 'backup_wifi_only';
+  static const String _commentsKey = 'file_comments';
   static const String _starredKey = 'starred_paths';
   static const String _recentKey = 'recent_paths';
 
@@ -99,6 +102,8 @@ class ReveProvider with ChangeNotifier {
   final List<TrashEntry> _trash = [];
   final Set<String> _starred = {};
   final List<String> _recent = [];
+  bool _wifiOnly = false;
+  final Map<String, List<String>> _comments = {};
   int? _backupRepoId;
   String _backupFolder = 'Camera';
   int _backupLimit = 6;
@@ -160,6 +165,20 @@ class ReveProvider with ChangeNotifier {
   Set<String> get starred => Set.unmodifiable(_starred);
   List<String> get recent => List.unmodifiable(_recent);
   bool isStarred(String path) => _starred.contains(path);
+  bool get wifiOnly => _wifiOnly;
+  List<String> commentsFor(String path) => List.unmodifiable(_comments[path] ?? const []);
+  Future<void> setWifiOnly(bool value) async {
+    _wifiOnly = value;
+    await _saveToBox();
+    notifyListeners();
+  }
+  Future<void> addComment(String path, String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    _comments.putIfAbsent(path, () => []).add(trimmed);
+    await _saveToBox();
+    notifyListeners();
+  }
   bool get backingUp => _backingUp;
   DateTime? get backupAt => _backupAt;
   String get backupSince {
@@ -225,6 +244,16 @@ class ReveProvider with ChangeNotifier {
       _backupLimit = box.get(_backupLimitKey, defaultValue: 6) as int;
       _backupMaxBytes = box.get(_backupMaxKey, defaultValue: 2 * 1024 * 1024 * 1024) as int;
       _backupVideos = box.get(_backupVideosKey, defaultValue: true) as bool;
+      _wifiOnly = box.get(_wifiOnlyKey, defaultValue: false) as bool;
+      final savedComments = box.get(_commentsKey);
+      if (savedComments is Map) {
+        _comments
+          ..clear()
+          ..addAll({
+            for (final entry in savedComments.entries)
+              entry.key.toString(): List<String>.from(entry.value as List),
+          });
+      }
       final savedStars = box.get(_starredKey);
       if (savedStars is List) _starred.addAll(savedStars.map((e) => e.toString()));
       final savedRecent = box.get(_recentKey);
@@ -298,6 +327,81 @@ class ReveProvider with ChangeNotifier {
     return null;
   }
 
+  /// A browser-openable link for any item, signed for private repos.
+  Future<String?> linkFor(GithubFileItem item) async {
+    if (item.isDirectory) {
+      final branch = _selectedBranch ?? '';
+      return 'https://github.com/$owner/$repoName/tree/${Uri.encodeComponent(branch)}/'
+          '${item.path.split('/').map(Uri.encodeComponent).join('/')}';
+    }
+    if (item.isAsset) return streamUrlFor(item);
+    return downloadUrlFor(item);
+  }
+
+  /// Saves edited text back to the same committed file.
+  Future<bool> saveText(String path, String content, String sha) async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    try {
+      await GithubService.uploadFile(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        path: path,
+        bytes: utf8.encode(content) as Uint8List,
+        message: 'Edit $path via reve',
+        branch: _selectedBranch,
+        sha: sha,
+      );
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  /// Restores every file under [folder] to the state it had in [commitSha].
+  Future<bool> rewindFolder(String folder, String commitSha) async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    try {
+      final old = await GithubService.entriesAtCommit(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        commitSha: commitSha,
+      );
+      final current = await GithubService.committedEntries(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        branch: _selectedBranch,
+      );
+      final prefix = folder.isEmpty ? '' : '$folder/';
+      final changes = <String, String?>{};
+      for (final path in current.keys) {
+        if (path.startsWith(prefix) && !old.containsKey(path)) changes[path] = null;
+      }
+      for (final entry in old.entries) {
+        if (entry.key.startsWith(prefix)) changes[entry.key] = entry.value;
+      }
+      await GithubService.commitTree(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        entries: changes,
+        message: 'Rewind $folder to $commitSha via reve',
+        branch: _selectedBranch,
+      );
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
   Future<void> toggleStar(String path) async {
     if (!_starred.remove(path)) _starred.add(path);
     await _saveToBox();
@@ -364,6 +468,8 @@ class ReveProvider with ChangeNotifier {
     await box.put(_trashKey, _trash.map((e) => e.toJson()).toList());
     await box.put(_starredKey, _starred.toList());
     await box.put(_recentKey, _recent);
+    await box.put(_wifiOnlyKey, _wifiOnly);
+    await box.put(_commentsKey, _comments);
     await box.put(_backupSeenKey, _backupSeen.toList());
     if (_backupAt != null) await box.put(_backupAtKey, _backupAt!.toIso8601String());
   }
@@ -848,6 +954,13 @@ class ReveProvider with ChangeNotifier {
   Future<void> runAutoBackup() async {
     if (!_autoBackup || _backingUp) return;
     if (_activeAccount == null || _repositories.isEmpty) return;
+    if (_wifiOnly) {
+      final networks = await Connectivity().checkConnectivity();
+      if (!networks.contains(ConnectivityResult.wifi) &&
+          !networks.contains(ConnectivityResult.ethernet)) {
+        return;
+      }
+    }
     final target = _firstOrNull(_repositories, (r) => r['id'] == _backupRepoId) ??
         _selectedRepo ??
         _repositories.first;

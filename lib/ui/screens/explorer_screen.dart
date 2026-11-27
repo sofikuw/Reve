@@ -19,6 +19,10 @@ import 'accounts_screen.dart';
 import 'gallery_screen.dart';
 import 'library_screen.dart';
 import 'music_screen.dart';
+import 'comments_screen.dart';
+import 'rewind_screen.dart';
+import 'share_screen.dart';
+import 'text_editor_screen.dart';
 import 'preview_screen.dart';
 import 'transfers_screen.dart';
 import 'trash_screen.dart';
@@ -161,6 +165,17 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                   MaterialPageRoute(builder: (_) => const LibraryScreen()),
                 );
               }
+              if (value == 'rewind') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RewindScreen(
+                      provider: provider,
+                      folder: provider.currentPath,
+                    ),
+                  ),
+                );
+              }
               if (value == 'trash') {
                 Navigator.push(
                   context,
@@ -219,6 +234,14 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 child: ListTile(
                   leading: Icon(Icons.collections_bookmark_outlined),
                   title: Text('Search · Starred · Recent'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'rewind',
+                child: ListTile(
+                  leading: Icon(Icons.history_toggle_off_outlined),
+                  title: Text('Rewind this folder'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -1178,6 +1201,47 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 onTap: () {
                   Navigator.pop(sheetContext);
                   _showProperties(item);
+                },
+              ),
+              if (!item.isDirectory)
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: const Text('Share link'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ShareScreen(item: item),
+                      ),
+                    );
+                  },
+                ),
+              if (!item.isDirectory && !item.isAsset)
+                ListTile(
+                  leading: const Icon(Icons.text_fields_rounded),
+                  title: const Text('Edit text'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TextEditorScreen(item: item),
+                      ),
+                    );
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.note_alt_outlined),
+                title: const Text('Notes'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CommentsScreen(item: item),
+                    ),
+                  );
                 },
               ),
               ListTile(
