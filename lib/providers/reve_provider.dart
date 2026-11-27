@@ -11,6 +11,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../services/notifications.dart';
 import '../services/photo_backup.dart';
 import '../services/updater.dart';
+import '../services/vault.dart' as vault;
 
 class ReveProvider with ChangeNotifier {
   static T? _firstOrNull<T>(Iterable<T> items, bool Function(T) test) {
@@ -49,6 +50,7 @@ class ReveProvider with ChangeNotifier {
   static const int maxUploadBytes = 38 * 1024 * 1024;
   /// Older files are still undoable after a delete.
   static const int maxUndoBytes = 8 * 1024 * 1024;
+  static const String vaultPrefix = 'Vault';
 
   final List<GithubAccount> _accounts = [];
   GithubAccount? _activeAccount;
@@ -402,6 +404,10 @@ class ReveProvider with ChangeNotifier {
       return false;
     }
   }
+
+  Future<bool> hasVaultKey() => vault.hasVaultKey();
+  Future<void> setVaultPassphrase(String value) => vault.setVaultPassphrase(value);
+  Future<String> recoveryKey() => vault.vaultRecoveryKey();
 
   Future<void> toggleStar(String path) async {
     if (!_starred.remove(path)) _starred.add(path);
@@ -1336,11 +1342,15 @@ class ReveProvider with ChangeNotifier {
       var sent = 0;
       for (var i = 0; i < files.length; i++) {
         if (_cancelUpload) throw Exception('Upload cancelled');
+        var bytes = files[i].bytes;
+        if (paths[i].startsWith('$vaultPrefix/')) {
+          bytes = await vault.encryptBytes(bytes);
+        }
         treeEntries[paths[i]] = await GithubService.createBlob(
           token: _activeAccount!.token,
           owner: owner,
           repo: repoName,
-          bytes: files[i].bytes,
+          bytes: bytes,
         );
         sent += files[i].bytes.lengthInBytes;
         _reportProgress(total == 0 ? null : sent / total);
@@ -1418,6 +1428,15 @@ class ReveProvider with ChangeNotifier {
     // GitHub needs a Content-Length. A buffered pick knows it from the byte
     // array; a streamed pick must have been measured before it got here.
     final size = bytes?.lengthInBytes ?? length;
+    if (path.startsWith('$vaultPrefix/') && source != null) {
+      return const UploadResult(
+        false,
+        'Files over 38 MB cannot be vault-encrypted yet. Save them outside the Vault folder.',
+      );
+    }
+    if (path.startsWith('$vaultPrefix/') && bytes != null) {
+      bytes = await vault.encryptBytes(bytes);
+    }
     if (size <= 0) {
       _isUploading = false;
       _endProgress();
@@ -1940,7 +1959,7 @@ class ReveProvider with ChangeNotifier {
           repo: repoName,
           assetId: item.assetId!,
         );
-        return await GithubService.fetchAssetBytes(
+        final bytes = await GithubService.fetchAssetBytes(
           url: url,
           onProgress: (fraction, loaded) {
             if (!report) return;
@@ -1950,13 +1969,16 @@ class ReveProvider with ChangeNotifier {
             _reportProgress(fraction);
           },
         );
+        return item.path.startsWith('$vaultPrefix/')
+            ? vault.decryptBytes(bytes)
+            : bytes;
       }
       // Public files come straight from raw.githubusercontent.com: one CDN
       // request instead of the Contents API plus a base64 git blob.
       if (_selectedRepo?['private'] == false) {
         final url = downloadUrlFor(item);
         if (url != null) {
-          return await GithubService.fetchAssetBytes(
+          final bytes = await GithubService.fetchAssetBytes(
             url: url,
             onProgress: (fraction, loaded) {
               if (!report) return;
@@ -1966,9 +1988,12 @@ class ReveProvider with ChangeNotifier {
               _reportProgress(fraction);
             },
           );
+          return item.path.startsWith('$vaultPrefix/')
+              ? vault.decryptBytes(bytes)
+              : bytes;
         }
       }
-      return await GithubService.fetchBytes(
+      final bytes = await GithubService.fetchBytes(
         token: _activeAccount!.token,
         owner: owner,
         repo: repoName,
@@ -1983,6 +2008,9 @@ class ReveProvider with ChangeNotifier {
           _reportProgress(fraction);
         },
       );
+      return item.path.startsWith('$vaultPrefix/')
+          ? vault.decryptBytes(bytes)
+          : bytes;
     } finally {
       if (report) _endProgress();
     }

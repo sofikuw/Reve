@@ -10,6 +10,7 @@ import '../../config.dart';
 import '../../providers/reve_provider.dart';
 import '../../services/github_service.dart';
 import 'backup_settings_screen.dart';
+import 'vault_settings_screen.dart';
 
 class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
@@ -103,6 +104,24 @@ class _AccountsScreenState extends State<AccountsScreen> {
           _buildSignIn(cs),
           const SizedBox(height: 10),
           _buildAutoBackup(provider, cs),
+          const SizedBox(height: 10),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: BorderSide(color: cs.outlineVariant),
+            ),
+            child: ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('Encrypted vault'),
+              subtitle: const Text('Encrypt files in the Vault folder on this device'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const VaultSettingsScreen()),
+              ),
+            ),
+          ),
         ],
       ),
     );
