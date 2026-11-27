@@ -6,6 +6,7 @@ import '../config.dart';
 import '../models/account.dart';
 import '../models/file_item.dart';
 import '../services/github_service.dart';
+import '../services/photo_backup.dart';
 import '../services/updater.dart';
 
 class ReveProvider with ChangeNotifier {
@@ -24,6 +25,9 @@ class ReveProvider with ChangeNotifier {
   static const String _repoIdKey = 'cached_repo_id';
   static const String _branchKey = 'cached_branch';
   static const String _pathKey = 'cached_path';
+  static const String _autoBackupKey = 'auto_backup';
+  static const String _backupSeenKey = 'backup_seen';
+  static const String _backupAtKey = 'backup_at';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
@@ -78,6 +82,10 @@ class ReveProvider with ChangeNotifier {
   bool _checkingUpdate = false;
   String? _updateError;
   int _updateRequest = 0;
+  bool _autoBackup = false;
+  bool _backingUp = false;
+  final Set<String> _backupSeen = {};
+  DateTime? _backupAt;
 
   List<GithubAccount> get accounts => List.unmodifiable(_accounts);
   GithubAccount? get activeAccount => _activeAccount;
@@ -123,6 +131,14 @@ class ReveProvider with ChangeNotifier {
   UpdateInfo? get update => _update;
   bool get checkingUpdate => _checkingUpdate;
   String? get updateError => _updateError;
+  bool get autoBackup => _autoBackup;
+  bool get backingUp => _backingUp;
+  DateTime? get backupAt => _backupAt;
+  String get backupSince {
+    if (_backupAt == null) return 'never';
+    final minutes = DateTime.now().difference(_backupAt!).inMinutes;
+    return minutes < 1 ? 'just now' : '$minutes min ago';
+  }
 
   String get owner =>
       (_selectedRepo?['owner']?['login'] as String?) ?? '';
@@ -175,6 +191,10 @@ class ReveProvider with ChangeNotifier {
       }
       _selectedBranch = box.get(_branchKey) as String?;
       _currentPath = box.get(_pathKey) as String? ?? '';
+      _autoBackup = box.get(_autoBackupKey, defaultValue: false) as bool;
+      final seen = box.get(_backupSeenKey);
+      if (seen is List) _backupSeen.addAll(seen.map((e) => e.toString()));
+      _backupAt = _tryParseDate(box.get(_backupAtKey));
       final cachedListing = _diskItems(_listingKey);
       if (cachedListing.isNotEmpty) {
         _files = cachedListing;
@@ -192,7 +212,12 @@ class ReveProvider with ChangeNotifier {
       final reposFresh = reposAt != null &&
           DateTime.now().difference(reposAt) < const Duration(minutes: 10) &&
           _repositories.isNotEmpty;
-      if (_activeAccount != null && !reposFresh) fetchRepositories();
+      if (_activeAccount != null && !reposFresh) {
+        await fetchRepositories();
+        if (_autoBackup) runAutoBackup();
+      } else if (_autoBackup) {
+        runAutoBackup();
+      }
       final updatesAt = _tryParseDate(box.get('updates_at'));
       if (updatesAt == null ||
           DateTime.now().difference(updatesAt) > const Duration(minutes: 30)) {
@@ -218,6 +243,9 @@ class ReveProvider with ChangeNotifier {
     if (_selectedRepo != null) await box.put(_repoIdKey, _selectedRepo!['id']);
     if (_selectedBranch != null) await box.put(_branchKey, _selectedBranch);
     await box.put(_pathKey, _currentPath);
+    await box.put(_autoBackupKey, _autoBackup);
+    await box.put(_backupSeenKey, _backupSeen.toList());
+    if (_backupAt != null) await box.put(_backupAtKey, _backupAt!.toIso8601String());
   }
 
   // ---------------------------------------------------------------------------
@@ -653,6 +681,80 @@ class ReveProvider with ChangeNotifier {
       return DateTime.parse(value);
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> setAutoBackup(bool value) async {
+    _autoBackup = value;
+    await _saveToBox();
+    notifyListeners();
+    if (value) runAutoBackup();
+  }
+
+  /// Copies unseen camera photos/videos into the current repository. Kept
+  /// deliberately small per run so it never blocks the user or drains battery.
+  Future<void> runAutoBackup() async {
+    if (!_autoBackup || _backingUp) return;
+    if (_activeAccount == null || _selectedRepo == null) return;
+    _backingUp = true;
+    notifyListeners();
+    try {
+      if (!await requestPhotoAccess()) {
+        _errorMessage = 'Photo library access was denied';
+        return;
+      }
+      final candidates = await recentPhotos(limit: 12);
+      final existing = await existingPaths();
+      var copied = 0;
+      for (final media in candidates) {
+        if (_backupSeen.contains(media.id)) continue;
+        final path = _targetPathFor(media.name);
+        if (existing.contains(path)) {
+          _backupSeen.add(media.id);
+          continue;
+        }
+        final source = await openBackupMedia(media);
+        if (source == null) {
+          _backupSeen.add(media.id);
+          continue;
+        }
+        if (media.size > maxUploadBytes) {
+          final result = await uploadLargeFile(
+            fileName: media.name,
+            length: media.size > 0 ? media.size : 1,
+            source: source,
+          );
+          if (result.ok) copied++;
+        } else {
+          final builder = BytesBuilder(copy: false);
+          await for (final chunk in source) {
+            builder.add(chunk);
+          }
+          final bytes = builder.takeBytes();
+          if (bytes.lengthInBytes > maxUploadBytes) {
+            final result = await uploadLargeFile(
+              fileName: media.name,
+              length: bytes.lengthInBytes,
+              bytes: bytes,
+            );
+            if (result.ok) copied++;
+          } else {
+            final result = await commitBatch([
+              BatchedFile(name: media.name, bytes: bytes),
+            ]);
+            copied += result.uploaded.length;
+          }
+        }
+        _backupSeen.add(media.id);
+        if (copied >= 6) break;
+      }
+      _backupAt = DateTime.now();
+      await _saveToBox();
+    } catch (e) {
+      _errorMessage = e.toString();
+    } finally {
+      _backingUp = false;
+      notifyListeners();
     }
   }
 

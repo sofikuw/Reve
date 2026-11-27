@@ -100,7 +100,34 @@ class _AccountsScreenState extends State<AccountsScreen> {
             }),
           const SizedBox(height: 18),
           _buildSignIn(cs),
+          const SizedBox(height: 10),
+          _buildAutoBackup(provider, cs),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAutoBackup(ReveProvider provider, ColorScheme cs) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      child: SwitchListTile(
+        secondary: Icon(
+          provider.backingUp ? Icons.sync_rounded : Icons.backup_rounded,
+          color: cs.primary,
+        ),
+        title: const Text('Auto-backup camera photos'),
+        subtitle: Text(
+          provider.backingUp
+              ? 'Backing up now…'
+              : 'Last run ${provider.backupSince}. Copies up to 6 new photos/videos '
+                  'into the current repo.',
+        ),
+        value: provider.autoBackup,
+        onChanged: (value) => provider.setAutoBackup(value),
       ),
     );
   }
