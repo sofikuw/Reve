@@ -20,7 +20,7 @@ dependencies:
   photo_gallery: ^2.2.1
   permission_handler: ^12.0.0
   share_plus: ^13.3.1
-  connectivity_plus: ^7.3.2
+  connectivity_plus: 7.3.1
   flutter_local_notifications: ^23.0.4
   open_filex: ^5.0.0
 
