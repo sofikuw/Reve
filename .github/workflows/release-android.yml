@@ -152,7 +152,7 @@ jobs:
               settings.write_text(cfg)
           p = pathlib.Path('android/app/build.gradle.kts')
           s = p.read_text()
-          s = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 37', s, count=1)
+          s = re.sub(r'compileSdk\s*=\s*(\d+|flutter\.compileSdkVersion)', 'compileSdk = 37', s, count=1)
           if 'isCoreLibraryDesugaringEnabled' not in s:
               s = s.replace(
                   '    compileOptions {\n',
@@ -160,11 +160,9 @@ jobs:
                   1,
               )
           if 'coreLibraryDesugaring(' not in s:
-              s = s.replace(
-                  'dependencies {\n',
-                  'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n',
-                  1,
-              )
+              s += ('\n\ndependencies {\n'
+                    '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n'
+                    '}\n')
           p.write_text(s)
           print(s[:800])
           PY
