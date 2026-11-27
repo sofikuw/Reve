@@ -18,7 +18,9 @@ import '../theme.dart';
 import 'accounts_screen.dart';
 import 'gallery_screen.dart';
 import 'library_screen.dart';
+import 'music_screen.dart';
 import 'preview_screen.dart';
+import 'transfers_screen.dart';
 import 'trash_screen.dart';
 import 'version_history_screen.dart';
 
@@ -135,6 +137,18 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             onSelected: (value) {
               if (value == 'repo') _createRepository();
               if (value == 'accounts') _openAccounts();
+              if (value == 'music') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MusicScreen()),
+                );
+              }
+              if (value == 'transfers') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const TransfersScreen()),
+                );
+              }
               if (value == 'gallery') {
                 Navigator.push(
                   context,
@@ -173,6 +187,22 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 child: ListTile(
                   leading: Icon(Icons.manage_accounts_outlined),
                   title: Text('Accounts'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'music',
+                child: ListTile(
+                  leading: Icon(Icons.music_note_outlined),
+                  title: Text('Music'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'transfers',
+                child: ListTile(
+                  leading: Icon(Icons.swap_vert_circle_outlined),
+                  title: Text('Transfers'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

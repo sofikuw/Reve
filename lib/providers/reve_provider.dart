@@ -82,6 +82,7 @@ class ReveProvider with ChangeNotifier {
   /// unknown the bar is indeterminate and [progress] stays `null`.
   double? _progress;
   bool _progressIndeterminate = false;
+  bool _cancelUpload = false;
   String? _progressLabel;
   int _progressStep = -1;
   bool _autoSortUploads = true;
@@ -138,6 +139,7 @@ class ReveProvider with ChangeNotifier {
   bool get progressIndeterminate => _progressIndeterminate;
   String? get progressLabel => _progressLabel;
   bool get isBusy => _progress != null || _progressIndeterminate;
+  void cancelTransfer() => _cancelUpload = true;
   bool get autoSortUploads => _autoSortUploads;
   int get lastRateLimit => _lastRateLimit;
   bool get isConnected => _activeAccount != null;
@@ -429,6 +431,7 @@ class ReveProvider with ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   void _startProgress(String label) {
+    _cancelUpload = false;
     _progress = 0;
     _progressIndeterminate = false;
     _progressLabel = label;
@@ -1217,6 +1220,7 @@ class ReveProvider with ChangeNotifier {
       final treeEntries = <String, String>{};
       var sent = 0;
       for (var i = 0; i < files.length; i++) {
+        if (_cancelUpload) throw Exception('Upload cancelled');
         treeEntries[paths[i]] = await GithubService.createBlob(
           token: _activeAccount!.token,
           owner: owner,
@@ -1307,6 +1311,12 @@ class ReveProvider with ChangeNotifier {
       );
     }
 
+    if (source != null) {
+      source = source.map((chunk) {
+        if (_cancelUpload) throw Exception('Upload cancelled');
+        return chunk;
+      });
+    }
     try {
       final releaseId = await GithubService.ensureAssetRelease(
         token: _activeAccount!.token,
