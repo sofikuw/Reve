@@ -971,15 +971,7 @@ class ReveProvider with ChangeNotifier {
     final target = _firstOrNull(_repositories, (r) => r['id'] == _backupRepoId) ??
         _selectedRepo ??
         _repositories.first;
-    final previousRepo = _selectedRepo;
-    final previousBranch = _selectedBranch;
-    final previousPath = _currentPath;
     _backingUp = true;
-    // The upload helpers work against the active repo. Point them at the
-    // backup destination for the duration of this run, then restore the view.
-    _selectedRepo = target;
-    _selectedBranch = target['default_branch'] as String?;
-    _currentPath = _backupFolder;
     notifyListeners();
     try {
       if (!await requestPhotoAccess()) {
@@ -987,14 +979,17 @@ class ReveProvider with ChangeNotifier {
         return;
       }
       final candidates = await recentPhotos(limit: _backupLimit * 2);
-      final existing = await existingPaths();
+      final existing = await existingPaths(repo: target);
       var copied = 0;
       for (final media in candidates) {
         if (_backupSeen.contains(media.id)) continue;
         if (!_backupVideos && media.kind == 'video') continue;
         if (media.size > _backupMaxBytes && media.size > 0) continue;
         final name = media.name;
-        final path = _targetPathFor(name);
+        final sorted = _autoSortUploads ? '${categoryFor(name)}/' : '';
+        final path = _backupFolder.isEmpty
+            ? '$sorted$name'
+            : '${_backupFolder}/$sorted$name';
         if (existing.contains(path)) {
           _backupSeen.add(media.id);
           continue;
@@ -1009,6 +1004,8 @@ class ReveProvider with ChangeNotifier {
             fileName: name,
             length: media.size > 0 ? media.size : 1,
             source: source,
+            repo: target,
+            folder: _backupFolder,
           );
           if (result.ok) copied++;
         } else {
@@ -1022,12 +1019,14 @@ class ReveProvider with ChangeNotifier {
               fileName: name,
               length: bytes.lengthInBytes,
               bytes: bytes,
+              repo: target,
+              folder: _backupFolder,
             );
             if (result.ok) copied++;
           } else {
             final result = await commitBatch([
               BatchedFile(name: name, bytes: bytes),
-            ]);
+            ], repo: target, folder: _backupFolder);
             copied += result.uploaded.length;
           }
         }
@@ -1040,9 +1039,6 @@ class ReveProvider with ChangeNotifier {
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
-      _selectedRepo = previousRepo;
-      _selectedBranch = previousBranch;
-      _currentPath = previousPath;
       _backingUp = false;
       notifyListeners();
     }
@@ -1102,29 +1098,39 @@ class ReveProvider with ChangeNotifier {
 
   /// Read-modify-write of the index with one retry when another device wins.
   Future<void> _mutateManifest(
-    void Function(Map<String, Map<String, dynamic>> files) change,
-  ) async {
+    void Function(Map<String, Map<String, dynamic>> files) change, {
+    Map<String, dynamic>? repo,
+    bool silent = false,
+  }) async {
+    final o = repo == null ? owner : (repo['owner']?['login'] as String? ?? '');
+    final r = repo == null ? repoName : (repo['name'] as String? ?? '');
+    final branch = repo == null
+        ? _selectedBranch
+        : repo['default_branch'] as String?;
     for (var attempt = 0; attempt < 2; attempt++) {
       final manifest = await GithubService.readAssetManifest(
         token: _activeAccount!.token,
-        owner: owner,
-        repo: repoName,
-        branch: _selectedBranch,
+        owner: o,
+        repo: r,
+        branch: branch,
       );
       change(manifest.files);
       try {
-        _assetsSha = await GithubService.putAssetManifest(
+        final sha = await GithubService.putAssetManifest(
           token: _activeAccount!.token,
-          owner: owner,
-          repo: repoName,
+          owner: o,
+          repo: r,
           files: manifest.files,
           sha: manifest.sha,
-          branch: _selectedBranch,
+          branch: branch,
         );
-        _assets = manifest.files;
-        _assetsKey = _assetKey;
-        _assetsLoaded = true;
-        _assetsAt = DateTime.now();
+        if (!silent) {
+          _assetsSha = sha;
+          _assets = manifest.files;
+          _assetsKey = _assetKey;
+          _assetsLoaded = true;
+          _assetsAt = DateTime.now();
+        }
         return;
       } on ManifestConflict {
         if (attempt == 1) rethrow;
@@ -1311,14 +1317,18 @@ class ReveProvider with ChangeNotifier {
 
   /// Existing committed paths in the branch — the conflict check for the
   /// batched upload path. Empty when offline or the tree cannot be read.
-  Future<Set<String>> existingPaths() async {
-    if (_activeAccount == null || _selectedRepo == null) return {};
+  Future<Set<String>> existingPaths({Map<String, dynamic>? repo}) async {
+    if (_activeAccount == null) return {};
+    final target = repo ?? _selectedRepo;
+    if (target == null) return {};
     try {
       return await GithubService.committedPaths(
         token: _activeAccount!.token,
-        owner: owner,
-        repo: repoName,
-        branch: _selectedBranch,
+        owner: target['owner']?['login'] as String? ?? '',
+        repo: target['name'] as String? ?? '',
+        branch: repo == null
+            ? _selectedBranch
+            : target['default_branch'] as String?,
       );
     } catch (_) {
       return {};
@@ -1326,18 +1336,38 @@ class ReveProvider with ChangeNotifier {
   }
 
   /// Uploads many small files in one git commit, no Contents API involved.
-  Future<CommitBatchOutcome> commitBatch(List<BatchedFile> files) async {
-    if (_activeAccount == null || _selectedRepo == null) {
+  Future<CommitBatchOutcome> commitBatch(
+    List<BatchedFile> files, {
+    Map<String, dynamic>? repo,
+    String? folder,
+  }) async {
+    if (_activeAccount == null) {
       return CommitBatchOutcome(
         failed: files.map((f) => f.name).toList(),
-        error: 'Connect an account and pick a repository first.',
+        error: 'Connect an account first.',
       );
     }
+    final target = repo ?? _selectedRepo;
+    if (target == null) {
+      return CommitBatchOutcome(
+        failed: files.map((f) => f.name).toList(),
+        error: 'Pick a repository first.',
+      );
+    }
+    final o = target['owner']?['login'] as String? ?? '';
+    final r = target['name'] as String? ?? '';
+    final branch = repo == null ? _selectedBranch : target['default_branch'] as String?;
+    String pathFor(String name) {
+      final base = folder == null || folder.isEmpty ? '' : '$folder/';
+      final sorted = _autoSortUploads ? '${categoryFor(name)}/' : '';
+      return '$base$sorted$name';
+    }
+
     _isUploading = true;
     _startProgress('Uploading ${files.length} files…');
     try {
       final total = files.fold(0, (sum, f) => sum + f.bytes.lengthInBytes);
-      final paths = files.map((f) => _targetPathFor(f.name)).toList();
+      final paths = files.map((f) => pathFor(f.name)).toList();
       final treeEntries = <String, String>{};
       var sent = 0;
       for (var i = 0; i < files.length; i++) {
@@ -1348,8 +1378,8 @@ class ReveProvider with ChangeNotifier {
         }
         treeEntries[paths[i]] = await GithubService.createBlob(
           token: _activeAccount!.token,
-          owner: owner,
-          repo: repoName,
+          owner: o,
+          repo: r,
           bytes: bytes,
         );
         sent += files[i].bytes.lengthInBytes;
@@ -1358,14 +1388,16 @@ class ReveProvider with ChangeNotifier {
       _progress = null;
       await GithubService.commitTree(
         token: _activeAccount!.token,
-        owner: owner,
-        repo: repoName,
+        owner: o,
+        repo: r,
         entries: treeEntries,
         message: 'Upload ${files.length} files via reve',
-        branch: _selectedBranch,
+        branch: branch,
       );
-      invalidateListings();
-      await fetchContents();
+      if (repo == null) {
+        invalidateListings();
+        await fetchContents();
+      }
       await notify('Upload complete', '${files.length} files uploaded');
       return CommitBatchOutcome(uploaded: paths);
     } catch (e) {
@@ -1416,14 +1448,26 @@ class ReveProvider with ChangeNotifier {
     Uint8List? bytes,
     Stream<List<int>>? source,
     String? message,
+    Map<String, dynamic>? repo,
+    String? folder,
   }) async {
-    if (_activeAccount == null || _selectedRepo == null) {
-      return const UploadResult(false, 'Connect an account and pick a repository first.');
+    if (_activeAccount == null) {
+      return const UploadResult(false, 'Connect an account first.');
     }
+    final target = repo ?? _selectedRepo;
+    if (target == null) {
+      return const UploadResult(false, 'Pick a repository first.');
+    }
+    final o = target['owner']?['login'] as String? ?? '';
+    final r = target['name'] as String? ?? '';
+    final branch = repo == null ? _selectedBranch : target['default_branch'] as String?;
+    final background = repo != null;
 
     _isUploading = true;
     _startProgress('Uploading $fileName…');
-    final path = _targetPathFor(fileName);
+    final base = folder == null || folder.isEmpty ? '' : '$folder/';
+    final sorted = _autoSortUploads ? '${categoryFor(fileName)}/' : '';
+    final path = '$base$sorted$fileName';
     final report = _progressReporter(fileName);
     // GitHub needs a Content-Length. A buffered pick knows it from the byte
     // array; a streamed pick must have been measured before it got here.
@@ -1455,15 +1499,15 @@ class ReveProvider with ChangeNotifier {
     try {
       final releaseId = await GithubService.ensureAssetRelease(
         token: _activeAccount!.token,
-        owner: owner,
-        repo: repoName,
-        branch: _selectedBranch,
+        owner: o,
+        repo: r,
+        branch: branch,
       );
       final assetName = GithubService.assetFileName(path);
       final uploaded = await GithubService.uploadAsset(
         token: _activeAccount!.token,
-        owner: owner,
-        repo: repoName,
+        owner: o,
+        repo: r,
         releaseId: releaseId,
         name: assetName,
         mime: GithubService.mimeFor(fileName),
@@ -1485,7 +1529,7 @@ class ReveProvider with ChangeNotifier {
             'mime': GithubService.mimeFor(fileName),
             'at': DateTime.now().toUtc().toIso8601String(),
           };
-        });
+        }, repo: repo, silent: background);
       } catch (_) {
         // The asset is live either way, and the listing falls back to the
         // release's own asset list — losing the upload over a failed index
@@ -1498,20 +1542,23 @@ class ReveProvider with ChangeNotifier {
       // A failed index write leaves an older copy in the release; without this
       // it shows up a second time at the root under its stripped name.
       final display = GithubService.assetDisplayName(assetName);
-      for (final asset in _releaseAssets) {
-        final aid = (asset['id'] as num?)?.toInt();
-        final name = (asset['name'] as String?) ?? '';
-        if (aid == null || aid == id) continue;
-        if (name == assetName || GithubService.assetDisplayName(name) == display) {
-          oldIds.add(aid);
+      if (!background) {
+        for (final asset in _releaseAssets) {
+          final aid = (asset['id'] as num?)?.toInt();
+          final name = (asset['name'] as String?) ?? '';
+          if (aid == null || aid == id) continue;
+          if (name == assetName ||
+              GithubService.assetDisplayName(name) == display) {
+            oldIds.add(aid);
+          }
         }
       }
       for (final staleId in oldIds) {
         try {
           await GithubService.deleteAsset(
             token: _activeAccount!.token,
-            owner: owner,
-            repo: repoName,
+            owner: o,
+            repo: r,
             assetId: staleId,
           );
         } catch (_) {
@@ -1519,10 +1566,12 @@ class ReveProvider with ChangeNotifier {
         }
       }
 
-      await _dropCommittedFileAt(path);
-      _resetAssets();
-      invalidateListings();
-      await fetchContents();
+      if (!background) {
+        await _dropCommittedFileAt(path);
+        _resetAssets();
+        invalidateListings();
+        await fetchContents();
+      }
       await notify('Upload complete', '$fileName uploaded to $path');
       return UploadResult(true, '$fileName uploaded to $path', path: path);
     } catch (e) {
