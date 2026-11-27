@@ -1000,6 +1000,69 @@ class GithubService {
     };
   }
 
+  /// Commits that touched one path, newest first.
+  static Future<List<Map<String, dynamic>>> fileHistory({
+    required String token,
+    required String owner,
+    required String repo,
+    required String path,
+    String? branch,
+  }) async {
+    final query = {
+      'path': path,
+      'per_page': '25',
+      if (branch != null && branch.isNotEmpty) 'sha': branch,
+    };
+    final response = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/commits?'
+          '${query.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}'),
+      headers: _headers(token),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Could not load file history (${response.statusCode}).');
+    }
+    final list = jsonDecode(response.body) as List;
+    return [
+      for (final entry in list)
+        if (entry is Map)
+          {
+            'sha': entry['sha'],
+            'message': (entry['commit']?['message'] ?? '') as String,
+            'date': (entry['commit']?['committer']?['date'] ?? '') as String,
+            'author': (entry['commit']?['author']?['name'] ?? '') as String,
+          },
+    ];
+  }
+
+  /// Blob sha of [path] inside a specific commit, used to restore a version.
+  static Future<String?> blobAtCommit({
+    required String token,
+    required String owner,
+    required String repo,
+    required String commitSha,
+    required String path,
+  }) async {
+    final commit = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/commits/$commitSha'),
+      headers: _headers(token),
+    );
+    if (commit.statusCode != 200) return null;
+    final treeSha =
+        (jsonDecode(commit.body) as Map<String, dynamic>)['tree']['sha'] as String;
+    final tree = await _get(
+      Uri.parse('$baseUrl/repos/$owner/$repo/git/trees/$treeSha?recursive=true'),
+      headers: _headers(token),
+    );
+    if (tree.statusCode != 200) return null;
+    final data = jsonDecode(tree.body) as Map<String, dynamic>;
+    for (final entry in data['tree'] as List) {
+      if (entry['type'] == 'blob' && entry['path'] == path) {
+        return entry['sha'] as String?;
+      }
+    }
+    return null;
+  }
+
   /// Stages raw bytes as a git blob — the batched path skips the base64
   /// Contents bodies (and their 4/3 overhead).
   static Future<String> createBlob({

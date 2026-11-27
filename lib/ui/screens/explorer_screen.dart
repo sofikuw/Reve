@@ -16,8 +16,11 @@ import '../../services/updater.dart';
 import '../kit.dart';
 import '../theme.dart';
 import 'accounts_screen.dart';
+import 'gallery_screen.dart';
+import 'library_screen.dart';
 import 'preview_screen.dart';
 import 'trash_screen.dart';
+import 'version_history_screen.dart';
 
 class ExplorerScreen extends StatefulWidget {
   const ExplorerScreen({super.key});
@@ -132,6 +135,18 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             onSelected: (value) {
               if (value == 'repo') _createRepository();
               if (value == 'accounts') _openAccounts();
+              if (value == 'gallery') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const GalleryScreen()),
+                );
+              }
+              if (value == 'library') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LibraryScreen()),
+                );
+              }
               if (value == 'trash') {
                 Navigator.push(
                   context,
@@ -158,6 +173,22 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                 child: ListTile(
                   leading: Icon(Icons.manage_accounts_outlined),
                   title: Text('Accounts'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'gallery',
+                child: ListTile(
+                  leading: Icon(Icons.photo_library_outlined),
+                  title: Text('Gallery'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'library',
+                child: ListTile(
+                  leading: Icon(Icons.collections_bookmark_outlined),
+                  title: Text('Search · Starred · Recent'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -952,6 +983,51 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
+  void _showProperties(GithubFileItem item) {
+    final provider = _provider;
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Properties'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _prop('Name', item.name),
+            _prop('Path', item.path),
+            _prop('Type', item.isDirectory
+                ? 'Folder'
+                : fileKind(item.name)),
+            _prop('Size', item.isDirectory ? '—' : formatBytes(item.size)),
+            _prop('Storage', item.isAsset ? 'Release asset' : 'Git commit'),
+            _prop('Repository', provider.selectedRepo?['full_name'] ?? ''),
+            _prop('Branch', provider.selectedBranch ?? ''),
+            if (item.assetId != null) _prop('Asset ID', '${item.assetId}'),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _prop(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 12.5),
+            children: [
+              TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w700)),
+              TextSpan(text: value),
+            ],
+          ),
+        ),
+      );
+
   Future<void> _editPath(
     ReveProvider provider,
     GithubFileItem item,
@@ -1037,6 +1113,43 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
                     _preview(item);
                   },
                 ),
+              ListTile(
+                leading: Icon(
+                  provider.isStarred(item.path)
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                ),
+                title: Text(provider.isStarred(item.path) ? 'Unstar' : 'Star'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  provider.toggleStar(item.path);
+                },
+              ),
+              if (!item.isAsset && !item.isDirectory)
+                ListTile(
+                  leading: const Icon(Icons.history_rounded),
+                  title: const Text('Version history'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => VersionHistoryScreen(
+                          provider: provider,
+                          item: item,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.info_outline_rounded),
+                title: const Text('Properties'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _showProperties(item);
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.edit_outlined),
                 title: const Text('Rename'),

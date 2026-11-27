@@ -35,6 +35,8 @@ class ReveProvider with ChangeNotifier {
   static const String _backupMaxKey = 'backup_max_bytes';
   static const String _backupVideosKey = 'backup_videos';
   static const String _trashKey = 'trash_entries';
+  static const String _starredKey = 'starred_paths';
+  static const String _recentKey = 'recent_paths';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
@@ -94,6 +96,8 @@ class ReveProvider with ChangeNotifier {
   final Set<String> _backupSeen = {};
   DateTime? _backupAt;
   final List<TrashEntry> _trash = [];
+  final Set<String> _starred = {};
+  final List<String> _recent = [];
   int? _backupRepoId;
   String _backupFolder = 'Camera';
   int _backupLimit = 6;
@@ -151,6 +155,9 @@ class ReveProvider with ChangeNotifier {
   int get backupMaxBytes => _backupMaxBytes;
   bool get backupVideos => _backupVideos;
   List<TrashEntry> get trash => List.unmodifiable(_trash);
+  Set<String> get starred => Set.unmodifiable(_starred);
+  List<String> get recent => List.unmodifiable(_recent);
+  bool isStarred(String path) => _starred.contains(path);
   bool get backingUp => _backingUp;
   DateTime? get backupAt => _backupAt;
   String get backupSince {
@@ -216,6 +223,14 @@ class ReveProvider with ChangeNotifier {
       _backupLimit = box.get(_backupLimitKey, defaultValue: 6) as int;
       _backupMaxBytes = box.get(_backupMaxKey, defaultValue: 2 * 1024 * 1024 * 1024) as int;
       _backupVideos = box.get(_backupVideosKey, defaultValue: true) as bool;
+      final savedStars = box.get(_starredKey);
+      if (savedStars is List) _starred.addAll(savedStars.map((e) => e.toString()));
+      final savedRecent = box.get(_recentKey);
+      if (savedRecent is List) {
+        _recent
+          ..clear()
+          ..addAll(savedRecent.map((e) => e.toString()));
+      }
       final savedTrash = box.get(_trashKey);
       if (savedTrash is List) {
         _trash
@@ -260,6 +275,70 @@ class ReveProvider with ChangeNotifier {
     }
   }
 
+  List<GithubFileItem> allCachedItems() {
+    final seen = <String>{};
+    final out = <GithubFileItem>[];
+    for (final entry in _diskCache.keys) {
+      for (final item in _diskItems(entry)) {
+        if (seen.add(item.path)) out.add(item);
+      }
+    }
+    for (final item in _files) {
+      if (seen.add(item.path)) out.add(item);
+    }
+    return out;
+  }
+
+  GithubFileItem? findCached(String path) {
+    for (final item in allCachedItems()) {
+      if (item.path == path) return item;
+    }
+    return null;
+  }
+
+  Future<void> toggleStar(String path) async {
+    if (!_starred.remove(path)) _starred.add(path);
+    await _saveToBox();
+    notifyListeners();
+  }
+
+  Future<void> recordOpen(String path) async {
+    _recent.remove(path);
+    _recent.insert(0, path);
+    if (_recent.length > 50) _recent.removeRange(50, _recent.length);
+    await _saveToBox();
+  }
+
+  /// Searches every folder of this repo+branch that has been cached, not just
+  /// the folder currently on screen.
+  List<GithubFileItem> searchFiles(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final prefix = '$owner/$repoName/${_selectedBranch ?? ''}/';
+    final seen = <String>{};
+    final out = <GithubFileItem>[];
+    for (final entry in _diskCache.entries) {
+      if (!entry.key.startsWith(prefix)) continue;
+      for (final item in _diskItems(entry.key)) {
+        if (seen.contains(item.path)) continue;
+        seen.add(item.path);
+        if (item.name.toLowerCase().contains(q) ||
+            item.path.toLowerCase().contains(q)) {
+          out.add(item);
+        }
+      }
+    }
+    for (final item in _files) {
+      if (seen.contains(item.path)) continue;
+      if (item.name.toLowerCase().contains(q) ||
+          item.path.toLowerCase().contains(q)) {
+        out.add(item);
+      }
+    }
+    out.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return out;
+  }
+
   Future<void> _saveToBox() async {
     final box = await Hive.openBox(_boxName);
     await box.put('accounts', _accounts.map((a) => a.toJson()).toList());
@@ -281,6 +360,8 @@ class ReveProvider with ChangeNotifier {
     await box.put(_backupMaxKey, _backupMaxBytes);
     await box.put(_backupVideosKey, _backupVideos);
     await box.put(_trashKey, _trash.map((e) => e.toJson()).toList());
+    await box.put(_starredKey, _starred.toList());
+    await box.put(_recentKey, _recent);
     await box.put(_backupSeenKey, _backupSeen.toList());
     if (_backupAt != null) await box.put(_backupAtKey, _backupAt!.toIso8601String());
   }
@@ -1415,6 +1496,38 @@ class ReveProvider with ChangeNotifier {
       _trash.removeWhere((e) => e.id == entry.id);
       await _saveToBox();
       _resetAssets();
+      invalidateListings();
+      await fetchContents();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      return false;
+    }
+  }
+
+  /// Puts an older blob back at the same path with a new commit.
+  Future<bool> restoreVersion(String path, String commitSha) async {
+    if (_activeAccount == null || _selectedRepo == null) return false;
+    try {
+      final sha = await GithubService.blobAtCommit(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        commitSha: commitSha,
+        path: path,
+      );
+      if (sha == null) {
+        _errorMessage = 'That version has no blob at $path';
+        return false;
+      }
+      await GithubService.commitTree(
+        token: _activeAccount!.token,
+        owner: owner,
+        repo: repoName,
+        entries: {path: sha},
+        message: 'Restore $path from $commitSha via reve',
+        branch: _selectedBranch,
+      );
       invalidateListings();
       await fetchContents();
       return true;
