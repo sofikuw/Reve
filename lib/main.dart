@@ -5,12 +5,14 @@ import 'package:provider/provider.dart';
 
 import 'providers/reve_provider.dart';
 import 'services/dns_fallback.dart';
+import 'services/notifications.dart';
 import 'ui/screens/explorer_screen.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   installDnsFallback();
+  await initNotifications();
   await Hive.initFlutter(kIsWeb ? null : 'reve');
 
   runApp(

@@ -8,6 +8,7 @@ import '../models/file_item.dart';
 import '../models/trash_entry.dart';
 import '../services/github_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/notifications.dart';
 import '../services/photo_backup.dart';
 import '../services/updater.dart';
 
@@ -1029,6 +1030,7 @@ class ReveProvider with ChangeNotifier {
       }
       _backupAt = DateTime.now();
       await _saveToBox();
+      await notify('Backup complete', '$copied new item${copied == 1 ? '' : 's'} backed up');
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
@@ -1354,6 +1356,7 @@ class ReveProvider with ChangeNotifier {
       );
       invalidateListings();
       await fetchContents();
+      await notify('Upload complete', '${files.length} files uploaded');
       return CommitBatchOutcome(uploaded: paths);
     } catch (e) {
       _errorMessage = e.toString();
@@ -1501,6 +1504,7 @@ class ReveProvider with ChangeNotifier {
       _resetAssets();
       invalidateListings();
       await fetchContents();
+      await notify('Upload complete', '$fileName uploaded to $path');
       return UploadResult(true, '$fileName uploaded to $path', path: path);
     } catch (e) {
       _errorMessage = e.toString();
