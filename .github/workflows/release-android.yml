@@ -111,12 +111,23 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib
-          for p in pathlib.Path.home().glob('.pub-cache/hosted/pub.dev/photo_gallery-*/android/build.gradle'):
+          import re
+          root = pathlib.Path.home() / '.pub-cache/hosted/pub.dev'
+          for p in root.glob('photo_gallery-*/android/build.gradle'):
               s = p.read_text()
               if 'namespace ' not in s:
                   s = s.replace('android {\n', 'android {\n    namespace "com.morbit.photogallery"\n', 1)
                   p.write_text(s)
-                  print('patched', p)
+                  print('patched namespace', p)
+          for p in root.glob('photo_gallery-*/android/src/main/kotlin/**/PhotoGalleryPlugin.kt'):
+              s = p.read_text()
+              s = re.sub(r'\nimport io\.flutter\.plugin\.common\.PluginRegistry\.Registrar', '', s)
+              s = re.sub(
+                  r'\s*@JvmStatic\s*fun registerWith\(registrar: Registrar\)\s*\{[^}]*\}',
+                  '\n', s, count=1,
+              )
+              p.write_text(s)
+              print('patched registrar', p)
           PY
 
       - name: Generate Android platform files
