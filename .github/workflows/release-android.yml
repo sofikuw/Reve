@@ -117,8 +117,9 @@ jobs:
               s = p.read_text()
               if 'namespace ' not in s:
                   s = s.replace('android {\n', 'android {\n    namespace "com.morbit.photogallery"\n', 1)
-                  p.write_text(s)
-                  print('patched namespace', p)
+              s = s.replace('compileSdkVersion 33', 'compileSdkVersion 36')
+              p.write_text(s)
+              print('patched build.gradle', p)
           for p in root.glob('photo_gallery-*/android/src/main/kotlin/**/PhotoGalleryPlugin.kt'):
               s = p.read_text()
               s = re.sub(r'\nimport io\.flutter\.plugin\.common\.PluginRegistry\.Registrar', '', s)
