@@ -14,7 +14,7 @@ void installDnsFallback() {
   preResolve('uploads.github.com');
 }
 
-const Duration _timeout = Duration(seconds: 12);
+const Duration _timeout = Duration(seconds: 5);
 
 /// DoH can return an IP whose route is dead from a particular network (the
 /// classic `Connection timed out, host: 20.205.243.161`). These GitHub frontends
@@ -53,10 +53,24 @@ class _DohHttpOverrides extends HttpOverrides {
 Future<ConnectionTask<Socket>> _connect(Uri url, String? proxyHost, int? proxyPort) async {
   Socket? socket;
   Object? lastError;
-  try {
-    socket = await Socket.connect(url.host, url.port, timeout: _timeout);
-  } on SocketException catch (error) {
-    lastError = error;
+  // Once the system resolver has failed for a host, go straight to the cached
+  // DoH answer instead of paying the connect timeout again on every request.
+  final known = _addresses[url.host];
+  if (known != null && known.isNotEmpty) {
+    for (final address in known) {
+      try {
+        socket = await Socket.connect(address, url.port, timeout: _timeout);
+        break;
+      } on SocketException catch (error) {
+        lastError = error;
+      }
+    }
+  } else {
+    try {
+      socket = await Socket.connect(url.host, url.port, timeout: _timeout);
+    } on SocketException catch (error) {
+      lastError = error;
+    }
   }
 
   if (socket == null) {

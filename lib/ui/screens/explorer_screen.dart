@@ -820,7 +820,11 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
             final item = files[index];
             return FileCard(
               item: item,
-              imageUrl: provider.downloadUrlFor(item),
+              // Private raw URLs need auth headers Image.network cannot send;
+            // trying them just adds failed requests to every grid scroll.
+            imageUrl: provider.selectedRepo?['private'] == true
+                ? null
+                : provider.downloadUrlFor(item),
               selected: _selected.contains(item.path),
               selecting: _selected.isNotEmpty,
               onTap: () => _activate(provider, item),

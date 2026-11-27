@@ -1329,6 +1329,23 @@ class ReveProvider with ChangeNotifier {
           },
         );
       }
+      // Public files come straight from raw.githubusercontent.com: one CDN
+      // request instead of the Contents API plus a base64 git blob.
+      if (_selectedRepo?['private'] == false) {
+        final url = downloadUrlFor(item);
+        if (url != null) {
+          return await GithubService.fetchAssetBytes(
+            url: url,
+            onProgress: (fraction, loaded) {
+              if (!report) return;
+              _progressLabel = fraction == null
+                  ? '$verb · ${formatBytes(loaded)}'
+                  : '$verb · ${(fraction * 100).round()}%';
+              _reportProgress(fraction);
+            },
+          );
+        }
+      }
       return await GithubService.fetchBytes(
         token: _activeAccount!.token,
         owner: owner,

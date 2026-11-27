@@ -409,7 +409,7 @@ class GithubService {
     final total = response.contentLength ?? 0;
     final builder = BytesBuilder(copy: false);
     var loaded = 0;
-    await for (final chunk in response.stream) {
+    await for (final chunk in response.stream.timeout(const Duration(minutes: 3))) {
       builder.add(chunk);
       loaded += chunk.length;
       onProgress?.call(total > 0 ? loaded / total : null, loaded);
