@@ -26,11 +26,14 @@ class GalleryScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gallery'),
-        bottom: Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            '${media.length} photo${media.length == 1 ? '' : 's'} and video${media.length == 1 ? '' : 's'}',
-            style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(24),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              '${media.length} photo${media.length == 1 ? '' : 's'} and video${media.length == 1 ? '' : 's'}',
+              style: TextStyle(fontSize: 11.5, color: cs.onSurfaceVariant),
+            ),
           ),
         ),
       ),

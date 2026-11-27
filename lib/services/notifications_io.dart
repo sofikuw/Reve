@@ -5,7 +5,9 @@ final FlutterLocalNotificationsPlugin _plugin =
 
 Future<void> initNotifications() async {
   const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-  await _plugin.initialize(const InitializationSettings(android: android));
+  await _plugin.initialize(
+      settings: const InitializationSettings(android: android),
+    );
   await _plugin
       .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>()
@@ -23,9 +25,9 @@ Future<void> notify(String title, String body) async {
     ),
   );
   await _plugin.show(
-    DateTime.now().millisecondsSinceEpoch.remainder(100000),
-    title,
-    body,
-    details,
+    id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+    title: title,
+    body: body,
+    notificationDetails: details,
   );
 }
