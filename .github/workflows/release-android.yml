@@ -141,6 +141,15 @@ jobs:
           python3 - <<'PY'
           import pathlib
           import re
+          settings = pathlib.Path('android/settings.gradle.kts')
+          cfg = settings.read_text()
+          if 'pluginManagement {' in cfg and 'mavenCentral()' not in cfg:
+              cfg = cfg.replace(
+                  'pluginManagement {\n',
+                  'pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n',
+                  1,
+              )
+              settings.write_text(cfg)
           p = pathlib.Path('android/app/build.gradle.kts')
           s = p.read_text()
           s = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 37', s, count=1)
