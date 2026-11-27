@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config.dart';
 import '../../providers/reve_provider.dart';
 import '../../services/github_service.dart';
+import 'backup_settings_screen.dart';
 
 class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
@@ -114,20 +115,22 @@ class _AccountsScreenState extends State<AccountsScreen> {
         borderRadius: BorderRadius.circular(18),
         side: BorderSide(color: cs.outlineVariant),
       ),
-      child: SwitchListTile(
-        secondary: Icon(
+      child: ListTile(
+        leading: Icon(
           provider.backingUp ? Icons.sync_rounded : Icons.backup_rounded,
           color: cs.primary,
         ),
-        title: const Text('Auto-backup camera photos'),
+        title: const Text('Auto backup settings'),
         subtitle: Text(
-          provider.backingUp
-              ? 'Backing up now…'
-              : 'Last run ${provider.backupSince}. Copies up to 6 new photos/videos '
-                  'into the current repo.',
+          provider.autoBackup
+              ? 'On · ${provider.backupFolder}/ · last run ${provider.backupSince}'
+              : 'Off · tap to configure repository, folder and limits',
         ),
-        value: provider.autoBackup,
-        onChanged: (value) => provider.setAutoBackup(value),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const BackupSettingsScreen()),
+        ),
       ),
     );
   }

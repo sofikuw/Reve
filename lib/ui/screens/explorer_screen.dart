@@ -41,6 +41,7 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
   final Set<String> _selected = {};
 
   ReveProvider get _provider => context.read<ReveProvider>();
+  Timer? _backupTimer;
 
   @override
   void initState() {
@@ -51,10 +52,15 @@ class _ExplorerScreenState extends State<ExplorerScreen> {
       _provider.addListener(_announceUpdate);
       _announceUpdate();
     });
+    _backupTimer = Timer.periodic(
+      const Duration(minutes: 15),
+      (_) => _provider.runAutoBackup(),
+    );
   }
 
   @override
   void dispose() {
+    _backupTimer?.cancel();
     _searchController.dispose();
     _provider.removeListener(_announceUpdate);
     super.dispose();

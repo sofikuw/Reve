@@ -28,6 +28,11 @@ class ReveProvider with ChangeNotifier {
   static const String _autoBackupKey = 'auto_backup';
   static const String _backupSeenKey = 'backup_seen';
   static const String _backupAtKey = 'backup_at';
+  static const String _backupRepoKey = 'backup_repo_id';
+  static const String _backupFolderKey = 'backup_folder';
+  static const String _backupLimitKey = 'backup_limit';
+  static const String _backupMaxKey = 'backup_max_bytes';
+  static const String _backupVideosKey = 'backup_videos';
 
   /// GitHub caps a Contents API request body at about 52 MB, and base64 makes a
   /// file 4/3 its size, so the real per-file ceiling is 39 MiB — measured: a
@@ -82,10 +87,15 @@ class ReveProvider with ChangeNotifier {
   bool _checkingUpdate = false;
   String? _updateError;
   int _updateRequest = 0;
-  bool _autoBackup = false;
+  bool _autoBackup = true;
   bool _backingUp = false;
   final Set<String> _backupSeen = {};
   DateTime? _backupAt;
+  int? _backupRepoId;
+  String _backupFolder = 'Camera';
+  int _backupLimit = 6;
+  int _backupMaxBytes = 2 * 1024 * 1024 * 1024;
+  bool _backupVideos = true;
 
   List<GithubAccount> get accounts => List.unmodifiable(_accounts);
   GithubAccount? get activeAccount => _activeAccount;
@@ -132,6 +142,11 @@ class ReveProvider with ChangeNotifier {
   bool get checkingUpdate => _checkingUpdate;
   String? get updateError => _updateError;
   bool get autoBackup => _autoBackup;
+  int? get backupRepoId => _backupRepoId;
+  String get backupFolder => _backupFolder;
+  int get backupLimit => _backupLimit;
+  int get backupMaxBytes => _backupMaxBytes;
+  bool get backupVideos => _backupVideos;
   bool get backingUp => _backingUp;
   DateTime? get backupAt => _backupAt;
   String get backupSince {
@@ -191,7 +206,12 @@ class ReveProvider with ChangeNotifier {
       }
       _selectedBranch = box.get(_branchKey) as String?;
       _currentPath = box.get(_pathKey) as String? ?? '';
-      _autoBackup = box.get(_autoBackupKey, defaultValue: false) as bool;
+      _autoBackup = box.get(_autoBackupKey, defaultValue: true) as bool;
+      _backupRepoId = box.get(_backupRepoKey) as int?;
+      _backupFolder = box.get(_backupFolderKey, defaultValue: 'Camera') as String;
+      _backupLimit = box.get(_backupLimitKey, defaultValue: 6) as int;
+      _backupMaxBytes = box.get(_backupMaxKey, defaultValue: 2 * 1024 * 1024 * 1024) as int;
+      _backupVideos = box.get(_backupVideosKey, defaultValue: true) as bool;
       final seen = box.get(_backupSeenKey);
       if (seen is List) _backupSeen.addAll(seen.map((e) => e.toString()));
       _backupAt = _tryParseDate(box.get(_backupAtKey));
@@ -244,6 +264,11 @@ class ReveProvider with ChangeNotifier {
     if (_selectedBranch != null) await box.put(_branchKey, _selectedBranch);
     await box.put(_pathKey, _currentPath);
     await box.put(_autoBackupKey, _autoBackup);
+    if (_backupRepoId != null) await box.put(_backupRepoKey, _backupRepoId);
+    await box.put(_backupFolderKey, _backupFolder);
+    await box.put(_backupLimitKey, _backupLimit);
+    await box.put(_backupMaxKey, _backupMaxBytes);
+    await box.put(_backupVideosKey, _backupVideos);
     await box.put(_backupSeenKey, _backupSeen.toList());
     if (_backupAt != null) await box.put(_backupAtKey, _backupAt!.toIso8601String());
   }
@@ -691,24 +716,69 @@ class ReveProvider with ChangeNotifier {
     if (value) runAutoBackup();
   }
 
-  /// Copies unseen camera photos/videos into the current repository. Kept
-  /// deliberately small per run so it never blocks the user or drains battery.
+  Future<void> setBackupRepo(int? id) async {
+    _backupRepoId = id;
+    await _saveToBox();
+    notifyListeners();
+  }
+
+  Future<void> setBackupFolder(String folder) async {
+    _backupFolder = folder.trim().replaceAll(RegExp(r'^/+|/+$'), '');
+    await _saveToBox();
+    notifyListeners();
+  }
+
+  Future<void> setBackupLimit(int limit) async {
+    _backupLimit = limit.clamp(1, 24);
+    await _saveToBox();
+    notifyListeners();
+  }
+
+  Future<void> setBackupMaxBytes(int bytes) async {
+    _backupMaxBytes = bytes;
+    await _saveToBox();
+    notifyListeners();
+  }
+
+  Future<void> setBackupVideos(bool value) async {
+    _backupVideos = value;
+    await _saveToBox();
+    notifyListeners();
+  }
+
+  /// Copies unseen camera photos/videos into the configured repository and
+  /// folder. Runs on startup and on a timer while the app is open; capped per
+  /// run so it never blocks the user or drains battery.
   Future<void> runAutoBackup() async {
     if (!_autoBackup || _backingUp) return;
-    if (_activeAccount == null || _selectedRepo == null) return;
+    if (_activeAccount == null || _repositories.isEmpty) return;
+    final target = _firstOrNull(_repositories, (r) => r['id'] == _backupRepoId) ??
+        _selectedRepo ??
+        _repositories.first;
+    final previousRepo = _selectedRepo;
+    final previousBranch = _selectedBranch;
+    final previousPath = _currentPath;
     _backingUp = true;
+    // The upload helpers work against the active repo. Point them at the
+    // backup destination for the duration of this run, then restore the view.
+    _selectedRepo = target;
+    _selectedBranch = target['default_branch'] as String?;
+    _currentPath = _backupFolder;
     notifyListeners();
     try {
       if (!await requestPhotoAccess()) {
         _errorMessage = 'Photo library access was denied';
         return;
       }
-      final candidates = await recentPhotos(limit: 12);
+      final candidates = await recentPhotos(limit: _backupLimit * 2);
       final existing = await existingPaths();
       var copied = 0;
       for (final media in candidates) {
         if (_backupSeen.contains(media.id)) continue;
-        final path = _targetPathFor(media.name);
+        if (!_backupVideos && media.kind == 'video') continue;
+        if (media.size > _backupMaxBytes && media.size > 0) continue;
+        final name = media.name;
+        final path = _targetPathFor(name);
         if (existing.contains(path)) {
           _backupSeen.add(media.id);
           continue;
@@ -720,7 +790,7 @@ class ReveProvider with ChangeNotifier {
         }
         if (media.size > maxUploadBytes) {
           final result = await uploadLargeFile(
-            fileName: media.name,
+            fileName: name,
             length: media.size > 0 ? media.size : 1,
             source: source,
           );
@@ -733,26 +803,29 @@ class ReveProvider with ChangeNotifier {
           final bytes = builder.takeBytes();
           if (bytes.lengthInBytes > maxUploadBytes) {
             final result = await uploadLargeFile(
-              fileName: media.name,
+              fileName: name,
               length: bytes.lengthInBytes,
               bytes: bytes,
             );
             if (result.ok) copied++;
           } else {
             final result = await commitBatch([
-              BatchedFile(name: media.name, bytes: bytes),
+              BatchedFile(name: name, bytes: bytes),
             ]);
             copied += result.uploaded.length;
           }
         }
         _backupSeen.add(media.id);
-        if (copied >= 6) break;
+        if (copied >= _backupLimit) break;
       }
       _backupAt = DateTime.now();
       await _saveToBox();
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
+      _selectedRepo = previousRepo;
+      _selectedBranch = previousBranch;
+      _currentPath = previousPath;
       _backingUp = false;
       notifyListeners();
     }
